@@ -890,12 +890,20 @@ function Planner({ onReset, user, onSignOut }) {
   return (
     <div style={{ minHeight:"100vh", background:appBg==="black"?"#1A1A1A":"#FFFFFF", padding:"16px", transition:"background 0.3s" }}>
       <div style={{ maxWidth:"1200px", margin:"0 auto" }}>
-      {/* header */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"24px" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:"12px" }}>
-          <img src={appBg==="black"?LOGO_DARK:LOGO_LIGHT} alt="Gérak. Get it done." style={{ height:"38px", width:"auto", display:"block" }} />
-          <input type="date" value={date} onChange={e => { const nd=e.target.value; setDate(nd); save(LS_DATE, nd); if(!isReceivingRef.current) pushToFirebase(syncCode, bundleData({date:nd})); }} style={{ padding:"8px", border:`1px solid ${appBg==="black"?"#444444":"rgba(0,0,0,0.2)"}`, borderRadius:"6px", fontSize:"13px", background:appBg==="black"?"#333333":"white", color:appBg==="black"?"#FFFFFF":"#000000" }} />
+      {/* header - Row 1: logo + action buttons */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"12px", gap:"8px", flexWrap:"wrap" }}>
+        <img src={appBg==="black"?LOGO_DARK:LOGO_LIGHT} alt="Gérak. Get it done." style={{ height:"34px", width:"auto", display:"block", flexShrink:0 }} />
+        <div style={{ display:"flex", gap:"8px", flexWrap:"wrap", justifyContent:"flex-end" }}>
+          <button onClick={() => setShowSync(true)} style={{ background: syncStatus==="synced"?"#5A9E62":syncStatus==="connecting"?"#E0A030":"#999999", color:"white", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px", fontWeight:600 }} title={`Sync: ${syncStatus}`}>{syncStatus==="synced"?"☁️ Synced":syncStatus==="connecting"?"☁️ …":"☁️ Offline"}</button>
+          <button onClick={() => setShowBackup(true)} style={{ background:appBg==="black"?"#1A1A1A":"rgba(0,0,0,0.08)", color:appBg==="black"?"#FFFFFF":"inherit", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px" }}>💾 Backup</button>
+          <button onClick={() => setShowRestore(true)} style={{ background:appBg==="black"?"#1A1A1A":"rgba(0,0,0,0.08)", color:appBg==="black"?"#FFFFFF":"inherit", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px" }}>📥 Restore</button>
+          <button onClick={() => setShowClear(true)} style={{ background:"#C43A3A", color:"white", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px", fontWeight:600 }}>🗑 Clear</button>
         </div>
+      </div>
+
+      {/* header - Row 2: date + clear completed */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px", gap:"8px", flexWrap:"wrap" }}>
+        <input type="date" value={date} onChange={e => { const nd=e.target.value; setDate(nd); save(LS_DATE, nd); if(!isReceivingRef.current) pushToFirebase(syncCode, bundleData({date:nd})); }} style={{ padding:"8px", border:`1px solid ${appBg==="black"?"#444444":"rgba(0,0,0,0.2)"}`, borderRadius:"6px", fontSize:"13px", background:appBg==="black"?"#333333":"white", color:appBg==="black"?"#FFFFFF":"#000000" }} />
         <div style={{ display:"flex", gap:"8px" }}>
           {tab === "today" && todaySections.some(s => (s.items||[]).some(it => it.done)) && (
             <button onClick={() => {
@@ -957,10 +965,6 @@ function Planner({ onReset, user, onSignOut }) {
               } 
             }} style={{ background:"#5A9E62", color:"white", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px", fontWeight:600 }}>✓ Clear Completed</button>
           )}
-          <button onClick={() => setShowSync(true)} style={{ background: syncStatus==="synced"?"#5A9E62":syncStatus==="connecting"?"#E0A030":"#999999", color:"white", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px", fontWeight:600 }} title={`Sync: ${syncStatus}`}>{syncStatus==="synced"?"☁️ Synced":syncStatus==="connecting"?"☁️ …":"☁️ Offline"}</button>
-          <button onClick={() => setShowBackup(true)} style={{ background:appBg==="black"?"#1A1A1A":"rgba(0,0,0,0.08)", color:appBg==="black"?"#FFFFFF":"inherit", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px" }}>💾 Backup</button>
-          <button onClick={() => setShowRestore(true)} style={{ background:appBg==="black"?"#1A1A1A":"rgba(0,0,0,0.08)", color:appBg==="black"?"#FFFFFF":"inherit", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px" }}>📥 Restore</button>
-          <button onClick={() => setShowClear(true)} style={{ background:"#C43A3A", color:"white", border:"none", borderRadius:"8px", padding:"8px 12px", cursor:"pointer", fontSize:"12px", fontWeight:600 }}>🗑 Clear</button>
         </div>
       </div>
 
