@@ -842,6 +842,99 @@ function Planner({ onReset, user, onSignOut }) {
     return () => { connectedRef.off("value", connHandler); unsub(); };
   }, [syncCode]);
 
+  // Auto-move tasks when execution date = today (Future & Projects → Today)
+  useEffect(() => {
+    const tasksToMove = [];
+    
+    // From Future (powerUp)
+    powerUp.forEach((section, si) => {
+      section.items.forEach((item, ii) => {
+        if (item.executionDate === date) {
+          tasksToMove.push({ source: 'future', sectionIdx: si, itemIdx: ii, item, section });
+        }
+      });
+    });
+    
+    // From Projects
+    projects.forEach((section, si) => {
+      section.items.forEach((item, ii) => {
+        if (item.executionDate === date) {
+          tasksToMove.push({ source: 'projects', sectionIdx: si, itemIdx: ii, item, section });
+        }
+      });
+    });
+    
+    if (tasksToMove.length === 0) return; // Nothing to move
+    
+    // Safety check: only move if task isn't already in Today (prevent infinite loops)
+    const alreadyInToday = tasksToMove.filter(t => {
+      return todaySections.some(s => 
+        s.label === t.section.label && 
+        s.items.some(it => it.text === t.item.text && it.executionDate === t.item.executionDate)
+      );
+    });
+    
+    const toActuallyMove = tasksToMove.filter(t => !alreadyInToday.find(at => at.item.text === t.item.text));
+    if (toActuallyMove.length === 0) return; // All already moved
+    
+    let updatedToday = [...todaySections];
+    let updatedPowerUp = [...powerUp];
+    let updatedProjects = [...projects];
+    
+    // Group by section to avoid index shifting issues
+    const bySource = { future: {}, projects: {} };
+    toActuallyMove.forEach(t => {
+      const src = t.source === 'future' ? 'future' : 'projects';
+      if (!bySource[src][t.sectionIdx]) bySource[src][t.sectionIdx] = [];
+      bySource[src][t.sectionIdx].push(t.itemIdx);
+    });
+    
+    // Move items to Today
+    toActuallyMove.forEach(({ item, section }) => {
+      let existingSection = updatedToday.find(s => s.label === section.label);
+      if (existingSection) {
+        updatedToday = updatedToday.map(s => 
+          s.label === section.label ? { ...s, items: [...s.items, item] } : s
+        );
+      } else {
+        updatedToday = [...updatedToday, {
+          id: `today-${Date.now()}`,
+          label: section.label,
+          emoji: section.emoji,
+          color: section.color,
+          accent: section.accent,
+          fontColor: section.fontColor,
+          items: [item]
+        }];
+      }
+    });
+    
+    // Remove from Future (process indices in reverse order to avoid shifting)
+    Object.entries(bySource.future).forEach(([si, indices]) => {
+      const sectionIdx = parseInt(si);
+      const sortedIndices = indices.sort((a, b) => b - a);
+      updatedPowerUp = updatedPowerUp.map((s, i) => 
+        i !== sectionIdx ? s : { ...s, items: s.items.filter((_, j) => !sortedIndices.includes(j)) }
+      );
+    });
+    
+    // Remove from Projects (process indices in reverse order)
+    Object.entries(bySource.projects).forEach(([si, indices]) => {
+      const sectionIdx = parseInt(si);
+      const sortedIndices = indices.sort((a, b) => b - a);
+      updatedProjects = updatedProjects.map((s, i) => 
+        i !== sectionIdx ? s : { ...s, items: s.items.filter((_, j) => !sortedIndices.includes(j)) }
+      );
+    });
+    
+    // Persist all changes
+    persistToday(updatedToday);
+    persistPowerUp(updatedPowerUp);
+    persistProjects(updatedProjects);
+  }, [date, powerUp, projects, todaySections]); // Re-check when any of these change
+
+
+
   // Persist functions: update state, save locally, AND push to Firebase
   const persistToday = (s) => { setTodaySections(s); save(LS_TODAY, s); if(!isReceivingRef.current) pushToFirebase(syncCode, bundleData({today:s})); };
   const persistDone = (d) => { setDone(d); save(LS_DONE, d); if(!isReceivingRef.current) pushToFirebase(syncCode, bundleData({done:d})); };
@@ -914,9 +1007,12 @@ function Planner({ onReset, user, onSignOut }) {
         </div>
       </div>
 
-      {/* header - Row 2: date + clear completed */}
+      {/* header - Row 2: date + today button + clear completed */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px", gap:"8px", flexWrap:"wrap" }}>
-        <input type="date" value={date} onChange={e => { const nd=e.target.value; setDate(nd); save(LS_DATE, nd); if(!isReceivingRef.current) pushToFirebase(syncCode, bundleData({date:nd})); }} style={{ padding:"8px", border:`1px solid ${appBg==="black"?"#444444":"rgba(0,0,0,0.2)"}`, borderRadius:"6px", fontSize:"13px", background:appBg==="black"?"#333333":"white", color:appBg==="black"?"#FFFFFF":"#000000" }} />
+        <div style={{ display:"flex", gap:"6px", alignItems:"center" }}>
+          <input type="date" value={date} onChange={e => { const nd=e.target.value; setDate(nd); save(LS_DATE, nd); if(!isReceivingRef.current) pushToFirebase(syncCode, bundleData({date:nd})); }} style={{ padding:"8px", border:`1px solid ${appBg==="black"?"#444444":"rgba(0,0,0,0.2)"}`, borderRadius:"6px", fontSize:"13px", background:appBg==="black"?"#333333":"white", color:appBg==="black"?"#FFFFFF":"#000000" }} />
+          <button onClick={() => { const td = todayStr(); setDate(td); save(LS_DATE, td); if(!isReceivingRef.current) pushToFirebase(syncCode, bundleData({date:td})); }} style={{ padding:"8px 12px", background:"#E0821E", color:"white", border:"none", borderRadius:"6px", fontSize:"12px", fontWeight:600, cursor:"pointer" }} title="Set to today">Today</button>
+        </div>
         <div style={{ display:"flex", gap:"8px" }}>
           {tab === "today" && todaySections.some(s => (s.items||[]).some(it => it.done)) && (
             <button onClick={() => {
