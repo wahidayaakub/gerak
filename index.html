@@ -146,7 +146,12 @@ const LOGO_DARK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAlgAAACWCAYAAAA
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const todayStr = () => { const d = new Date(); return d.toISOString().slice(0,10); };
 const fmtDate  = (s) => new Date(s + "T00:00:00").toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
-const fmtShort = (s) => new Date(s + "T00:00:00").toLocaleDateString("en-GB", { weekday:"short", day:"numeric", month:"short" });
+const fmtShort = (s) => {
+  if (!s) return "";
+  // Extract just the date part if it's datetime-local format (contains T)
+  const dateOnly = s.includes('T') ? s.split('T')[0] : s;
+  return new Date(dateOnly + "T00:00:00").toLocaleDateString("en-GB", { weekday:"short", day:"numeric", month:"short" });
+};
 
 // ─── color palette (organized: light→dark by groups) ────────────────────────
 const COLOR_GROUPS = {
@@ -393,8 +398,8 @@ function TaskItem({ item, index, total, onToggle, onDelete, onMoveUp, onMoveDown
   const actSecs = (item.actualTime || 0) + live;
   const urgent = item.urgent || item.text.includes("⚡");
   
-  const isOverdue = item.deadline && item.deadline < todayStr() && !item.done;
-  const isDueToday = item.deadline === todayStr() && !item.done;
+  const isOverdue = item.deadline && (item.deadline.split('T')[0] < todayStr()) && !item.done;
+  const isDueToday = (item.deadline?.split('T')[0] === todayStr()) && !item.done;
 
   const [showMenu, setShowMenu] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -451,8 +456,8 @@ function TaskItem({ item, index, total, onToggle, onDelete, onMoveUp, onMoveDown
           <button onClick={onToggle} onDoubleClick={() => { setEditText(item.text); setEditing(true); }} style={{ flex:1, background:"none", border:"none", textAlign:"left", cursor:"pointer", fontFamily:"'Atkinson Hyperlegible', sans-serif", fontSize:"13px", lineHeight:"1.4", color:urgent&&!item.done?"#C43A3A":item.done?(fontColor==="white"?"rgba(255,255,255,0.4)":"rgba(0,0,0,0.3)"):(fontColor==="white"?"#FFFFFF":"#000000"), textDecoration:item.done?"line-through":"none", fontWeight:urgent&&!item.done?700:400, fontStyle:"normal", padding:0 }}>
             {item.text}
             {item.executionDate && !item.done && (
-              <span style={{ fontSize:"10px", marginLeft:"7px", fontWeight:600, color:item.executionDate===todayStr()?"#5A9E62":"rgba(0,0,0,0.45)", background:item.executionDate===todayStr()?"rgba(90,158,98,0.12)":"rgba(0,0,0,0.06)", borderRadius:"4px", padding:"1px 5px" }}>
-                📅 {item.executionDate===todayStr()?"Today":fmtShort(item.executionDate)}
+              <span style={{ fontSize:"10px", marginLeft:"7px", fontWeight:600, color:item.executionDate.split('T')[0]===todayStr()?"#5A9E62":"rgba(0,0,0,0.45)", background:item.executionDate.split('T')[0]===todayStr()?"rgba(90,158,98,0.12)":"rgba(0,0,0,0.06)", borderRadius:"4px", padding:"1px 5px" }}>
+                📅 {item.executionDate.split('T')[0]===todayStr()?"Today":fmtShort(item.executionDate)}
               </span>
             )}
             {item.deadline && !item.done && (
@@ -500,16 +505,16 @@ function TaskItem({ item, index, total, onToggle, onDelete, onMoveUp, onMoveDown
                   onMouseLeave={e => e.currentTarget.style.background="none"}>→ Today</button>
               )}
               
-              {/* Execution date */}
+              {/* Execution date + time */}
               <div style={{ borderTop:"1px solid rgba(0,0,0,0.05)", padding:"8px 14px", display:"flex", gap:"6px", alignItems:"center" }}>
                 <span style={{ fontSize:"12px", color:"rgba(0,0,0,0.4)", flex:"1" }}>📅 Execution</span>
-                <input type="date" value={item.executionDate || ""} onChange={e => { onSetExecutionDate(e.target.value || null); setShowMenu(false); }} style={{ flex:"1", padding:"4px", fontSize:"11px", border:"1px solid rgba(0,0,0,0.15)", borderRadius:"4px" }} />
+                <input type="datetime-local" value={item.executionDate || ""} onChange={e => { onSetExecutionDate(e.target.value || null); setShowMenu(false); }} style={{ flex:"1", padding:"4px", fontSize:"11px", border:"1px solid rgba(0,0,0,0.15)", borderRadius:"4px" }} />
               </div>
               
-              {/* Deadline */}
+              {/* Deadline + time */}
               <div style={{ borderTop:"1px solid rgba(0,0,0,0.05)", padding:"8px 14px", display:"flex", gap:"6px", alignItems:"center" }}>
                 <span style={{ fontSize:"12px", color:"rgba(0,0,0,0.4)", flex:"1" }}>⏳ Deadline</span>
-                <input type="date" value={item.deadline || ""} onChange={e => { onSetDeadline(e.target.value || null); setShowMenu(false); }} style={{ flex:"1", padding:"4px", fontSize:"11px", border:"1px solid rgba(0,0,0,0.15)", borderRadius:"4px" }} />
+                <input type="datetime-local" value={item.deadline || ""} onChange={e => { onSetDeadline(e.target.value || null); setShowMenu(false); }} style={{ flex:"1", padding:"4px", fontSize:"11px", border:"1px solid rgba(0,0,0,0.15)", borderRadius:"4px" }} />
               </div>
               
               <button onClick={() => { onMoveCategory(); setShowMenu(false); }}
@@ -560,6 +565,51 @@ function MoveTodayCategoryModal({ item, fromSi, sections, onMove, onClose }) {
           ))}
         </div>
         <button onClick={onClose} style={{ width:"100%", background:"rgba(0,0,0,0.07)", border:"none", borderRadius:"8px", color:"rgba(0,0,0,0.6)", padding:"10px", cursor:"pointer", fontFamily:"'Atkinson Hyperlegible', sans-serif", fontSize:"13px" }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function ReminderModal({ reminder, appBg, onDismiss, onSnooze }) {
+  const dark = appBg === "black";
+  if (!reminder) return null;
+  
+  const {task, type} = reminder;
+  const timeStr = type === 'execution' ? task.executionDate : task.deadline;
+  const timeDisplay = new Date(timeStr).toLocaleString('en-US', { 
+    weekday: 'short', 
+    month: 'short', 
+    day: 'numeric',
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: true 
+  });
+  
+  const mainMessage = type === 'execution' 
+    ? '🔔 Time to execute your task!' 
+    : '⏰ You have a task due!';
+  
+  return (
+    <div onClick={onDismiss} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:2000, padding:"20px" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:dark?"#333333":"white", borderRadius:"16px", padding:"32px", maxWidth:"420px", width:"100%", border:dark?"1px solid rgba(255,255,255,0.5)":"none", boxShadow:"0 20px 60px rgba(0,0,0,0.4)" }}>
+        
+        <div style={{ fontSize:"20px", fontWeight:700, color:dark?"#FFFFFF":"#000000", marginBottom:"16px", lineHeight:1.4 }}>
+          {mainMessage}
+        </div>
+        
+        <div style={{ fontSize:"15px", fontWeight:600, color:dark?"#E0821E":"#FF914D", marginBottom:"12px", wordBreak:"break-word", padding:"12px", background:dark?"rgba(224,130,30,0.1)":"rgba(255,145,77,0.08)", borderRadius:"8px" }}>
+          {task.text}
+        </div>
+        
+        <div style={{ fontSize:"13px", color:dark?"rgba(255,255,255,0.6)":"rgba(0,0,0,0.6)", marginBottom:"24px", padding:"10px", background:dark?"rgba(0,0,0,0.2)":"rgba(0,0,0,0.05)", borderRadius:"6px" }}>
+          {type === 'execution' ? '📅 Execute at: ' : '⏳ Due on: '}
+          <strong style={{color:dark?"#FFFFFF":"#000000"}}>{timeDisplay}</strong>
+        </div>
+        
+        <div style={{ display:"flex", gap:"10px" }}>
+          <button onClick={onDismiss} style={{ flex:1, background:"#5A9E62", border:"none", borderRadius:"8px", color:"white", padding:"12px", cursor:"pointer", fontSize:"13px", fontWeight:700, transition:"all 0.2s" }} onMouseEnter={e => e.target.style.background="#4A8E52"} onMouseLeave={e => e.target.style.background="#5A9E62"}>Got it! ✓</button>
+          <button onClick={onSnooze} style={{ flex:1, background:"#E0821E", border:"none", borderRadius:"8px", color:"white", padding:"12px", cursor:"pointer", fontSize:"13px", fontWeight:700, transition:"all 0.2s" }} onMouseEnter={e => e.target.style.background="#D07610"} onMouseLeave={e => e.target.style.background="#E0821E"}>Snooze 5m</button>
+        </div>
       </div>
     </div>
   );
@@ -788,6 +838,8 @@ function Planner({ onReset, user, onSignOut }) {
   const syncCode = user && user.uid ? user.uid : getSyncCode();
   const [showSync, setShowSync] = useState(false);
   const [syncStatus, setSyncStatus] = useState("connecting"); // "connecting" | "synced" | "offline"
+  const [reminderItem, setReminderItem] = useState(null); // reminder popup state
+  const [firedReminders, setFiredReminders] = useState(new Set()); // track which reminders have fired
   const isReceivingRef = useRef(false); // prevent echo loop (don't re-push data we just received)
 
   // Bundle all app data for Firebase
@@ -849,7 +901,7 @@ function Planner({ onReset, user, onSignOut }) {
     // From Future (powerUp)
     powerUp.forEach((section, si) => {
       section.items.forEach((item, ii) => {
-        if (item.executionDate === date) {
+        if (item.executionDate && item.executionDate.split('T')[0] === date) {
           tasksToMove.push({ source: 'future', sectionIdx: si, itemIdx: ii, item, section });
         }
       });
@@ -858,7 +910,7 @@ function Planner({ onReset, user, onSignOut }) {
     // From Projects
     projects.forEach((section, si) => {
       section.items.forEach((item, ii) => {
-        if (item.executionDate === date) {
+        if (item.executionDate && item.executionDate.split('T')[0] === date) {
           tasksToMove.push({ source: 'projects', sectionIdx: si, itemIdx: ii, item, section });
         }
       });
@@ -933,6 +985,44 @@ function Planner({ onReset, user, onSignOut }) {
     persistProjects(updatedProjects);
   }, [date, powerUp, projects, todaySections]); // Re-check when any of these change
 
+  // Check for reminders every minute (execution + deadline times)
+  useEffect(() => {
+    const checkReminders = () => {
+      const now = new Date();
+      const nowStr = now.toISOString().slice(0, 16); // "2026-07-12T14:30"
+      
+      // Check all tasks in all tabs
+      const allTasks = [
+        ...todaySections.flatMap(s => s.items.map(it => ({...it, type:'today'}))),
+        ...powerUp.flatMap(s => s.items.map(it => ({...it, type:'future'}))),
+        ...projects.flatMap(s => s.items.map(it => ({...it, type:'projects'})))
+      ];
+      
+      allTasks.forEach(task => {
+        // Check execution date
+        if (task.executionDate && task.executionDate.slice(0, 16) === nowStr) {
+          const reminderId = `exe-${task.text}-${task.executionDate}`;
+          if (!firedReminders.has(reminderId)) {
+            setReminderItem({task, type:'execution'});
+            setFiredReminders(new Set([...firedReminders, reminderId]));
+          }
+        }
+        // Check deadline
+        if (task.deadline && task.deadline.slice(0, 16) === nowStr) {
+          const reminderId = `dead-${task.text}-${task.deadline}`;
+          if (!firedReminders.has(reminderId)) {
+            setReminderItem({task, type:'deadline'});
+            setFiredReminders(new Set([...firedReminders, reminderId]));
+          }
+        }
+      });
+    };
+    
+    // Check immediately and then every minute
+    checkReminders();
+    const interval = setInterval(checkReminders, 60000); // Every 60 seconds
+    return () => clearInterval(interval);
+  }, [firedReminders, todaySections, powerUp, projects]); // Re-check when tasks change
 
 
   // Persist functions: update state, save locally, AND push to Firebase
@@ -1858,6 +1948,7 @@ function Planner({ onReset, user, onSignOut }) {
       {showBackup  && <BackupModal today={todaySections} done={done} powerUp={powerUp} date={date} projects={projects} appBg={appBg} season={season} onClose={() => setShowBackup(false)} />}
       {showRestore && <RestoreModal appBg={appBg} onRestoreAndReset={() => { setShowRestore(false); onReset(); }} onSetAppBg={setAppBg} onSetSeason={setSeason} onPushRestore={(b) => { pushToFirebase(syncCode, { today: b.today || todaySections, done: b.done || done, powerUp: b.powerUp || powerUp, projects: b.projects || projects, date: b.date || date, appBg: b.appBg || appBg, season: b.season || season }); }} onClose={() => setShowRestore(false)} />}
       {showSync && <SyncModal appBg={appBg} user={user} syncStatus={syncStatus} onSignOut={onSignOut} onClose={() => setShowSync(false)} />}
+      {reminderItem && <ReminderModal reminder={reminderItem} appBg={appBg} onDismiss={() => setReminderItem(null)} onSnooze={() => { setReminderItem(null); setTimeout(() => setReminderItem(reminderItem), 300000); }} />}
     </div>
   );
 }
