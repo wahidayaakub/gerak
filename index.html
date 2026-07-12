@@ -631,7 +631,7 @@ function BackupModal({ today, done, powerUp, date, projects, appBg, season, onCl
   );
 }
 
-function RestoreModal({ appBg, onRestoreAndReset, onSetAppBg, onSetSeason, onClose }) {
+function RestoreModal({ appBg, onRestoreAndReset, onSetAppBg, onSetSeason, onPushRestore, onClose }) {
   const [txt, setTxt] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -645,8 +645,10 @@ function RestoreModal({ appBg, onRestoreAndReset, onSetAppBg, onSetSeason, onClo
       if (b.projects) save(LS_PROJ,  b.projects);
       if (b.appBg)    onSetAppBg(b.appBg);
       if (b.season)   onSetSeason(b.season);
+      // Push restored data to Firebase so cloud sync doesn't overwrite it
+      if (onPushRestore) onPushRestore(b);
       setMsg("✓ Restored!");
-      setTimeout(() => { onRestoreAndReset(); }, 1000);
+      setTimeout(() => { onRestoreAndReset(); }, 1200);
     } catch { setMsg("✗ Invalid backup file."); }
   };
 
@@ -1741,7 +1743,7 @@ function Planner({ onReset, user, onSignOut }) {
       )}
       </div>
       {showBackup  && <BackupModal today={todaySections} done={done} powerUp={powerUp} date={date} projects={projects} appBg={appBg} season={season} onClose={() => setShowBackup(false)} />}
-      {showRestore && <RestoreModal appBg={appBg} onRestoreAndReset={() => { setShowRestore(false); onReset(); }} onSetAppBg={setAppBg} onSetSeason={setSeason} onClose={() => setShowRestore(false)} />}
+      {showRestore && <RestoreModal appBg={appBg} onRestoreAndReset={() => { setShowRestore(false); onReset(); }} onSetAppBg={setAppBg} onSetSeason={setSeason} onPushRestore={(b) => { pushToFirebase(syncCode, { today: b.today || todaySections, done: b.done || done, powerUp: b.powerUp || powerUp, projects: b.projects || projects, date: b.date || date, appBg: b.appBg || appBg, season: b.season || season }); }} onClose={() => setShowRestore(false)} />}
       {showSync && <SyncModal appBg={appBg} user={user} syncStatus={syncStatus} onSignOut={onSignOut} onClose={() => setShowSync(false)} />}
     </div>
   );
