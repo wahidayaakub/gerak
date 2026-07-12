@@ -270,6 +270,21 @@ const fmtTime = (secs) => {
   return `${m}m`;
 };
 
+// Toggle urgent on item at index `ii` within `items`, then reorder:
+// urgent tasks bubble to top of the section (stable order otherwise).
+const toggleUrgentAndReorder = (items, ii) => {
+  const toggled = items.map((it, j) => j !== ii ? it : { ...it, urgent: !it.urgent });
+  // Stable sort: urgent (and not done) first, keeping original relative order
+  const withIndex = toggled.map((it, idx) => ({ it, idx }));
+  withIndex.sort((a, b) => {
+    const aU = a.it.urgent && !a.it.done ? 1 : 0;
+    const bU = b.it.urgent && !b.it.done ? 1 : 0;
+    if (aU !== bU) return bU - aU; // urgent first
+    return a.idx - b.idx; // otherwise keep original order
+  });
+  return withIndex.map(x => x.it);
+};
+
 // Helper to determine if text should be white or dark based on background color
 const isColorDark = (hexColor) => {
   const hex = hexColor.replace("#", "");
@@ -478,6 +493,13 @@ function TaskItem({ item, index, total, onToggle, onDelete, onMoveUp, onMoveDown
                 <option value="asneeded">🔄 As needed</option>
               </select>
               
+              {onExecuteToday && (
+                <button onClick={() => { onExecuteToday(); setShowMenu(false); }}
+                  style={{ display:"block", width:"100%", background:"none", border:"none", padding:"10px 14px", textAlign:"left", fontFamily:"'Atkinson Hyperlegible', sans-serif", fontSize:"13px", cursor:"pointer", color:"#5A9E62", borderTop:"1px solid rgba(0,0,0,0.05)" }}
+                  onMouseEnter={e => e.currentTarget.style.background="rgba(90,158,98,0.06)"}
+                  onMouseLeave={e => e.currentTarget.style.background="none"}>→ Today</button>
+              )}
+              
               {/* Execution date */}
               <div style={{ borderTop:"1px solid rgba(0,0,0,0.05)", padding:"8px 14px", display:"flex", gap:"6px", alignItems:"center" }}>
                 <span style={{ fontSize:"12px", color:"rgba(0,0,0,0.4)", flex:"1" }}>📅 Execution</span>
@@ -489,15 +511,6 @@ function TaskItem({ item, index, total, onToggle, onDelete, onMoveUp, onMoveDown
                 <span style={{ fontSize:"12px", color:"rgba(0,0,0,0.4)", flex:"1" }}>⏳ Deadline</span>
                 <input type="date" value={item.deadline || ""} onChange={e => { onSetDeadline(e.target.value || null); setShowMenu(false); }} style={{ flex:"1", padding:"4px", fontSize:"11px", border:"1px solid rgba(0,0,0,0.15)", borderRadius:"4px" }} />
               </div>
-              
-              {onExecuteToday && (
-                <>
-                  <button onClick={() => { onExecuteToday(); setShowMenu(false); }}
-                    style={{ display:"block", width:"100%", background:"none", border:"none", padding:"10px 14px", textAlign:"left", fontFamily:"'Atkinson Hyperlegible', sans-serif", fontSize:"13px", cursor:"pointer", color:"#5A9E62", borderTop:"1px solid rgba(0,0,0,0.05)" }}
-                    onMouseEnter={e => e.currentTarget.style.background="rgba(90,158,98,0.06)"}
-                    onMouseLeave={e => e.currentTarget.style.background="none"}>→ Today</button>
-                </>
-              )}
               
               <button onClick={() => { onMoveCategory(); setShowMenu(false); }}
                 style={{ display:"block", width:"100%", background:"none", border:"none", padding:"10px 14px", textAlign:"left", fontFamily:"'Atkinson Hyperlegible', sans-serif", fontSize:"13px", cursor:"pointer", color:"#2C2C2C", borderTop:"1px solid rgba(0,0,0,0.05)" }}
@@ -1091,7 +1104,7 @@ function Planner({ onReset, user, onSignOut }) {
                     onMoveCategory={() => setMovingItem({si,ii})}
                     onEditText={(newText) => persistToday(todaySections.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,text:newText})}))}
                     onEditRecurs={(recurs) => persistToday(todaySections.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,recurs})}))}
-                    onToggleUrgent={() => persistToday(todaySections.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,urgent:!it.urgent})}))}
+                    onToggleUrgent={() => persistToday(todaySections.map((s,i)=>i!==si?s:{...s,items:toggleUrgentAndReorder(s.items, ii)}))}
                     onSetDeadline={(d) => persistToday(todaySections.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,deadline:d})}))}
                     onSetExecutionDate={(d) => persistToday(todaySections.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,executionDate:d})}))}
                   />
@@ -1249,7 +1262,7 @@ function Planner({ onReset, user, onSignOut }) {
                       onMoveCategory={() => setPuActions({si,ii:ii,item:section.items[ii],section,isProject:false})}
                       onEditText={(newText) => persistPowerUp(powerUp.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,text:newText})}))}
                       onEditRecurs={(recurs) => persistPowerUp(powerUp.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,recurs})}))}
-                      onToggleUrgent={() => persistPowerUp(powerUp.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,urgent:!it.urgent})}))}
+                      onToggleUrgent={() => persistPowerUp(powerUp.map((s,i)=>i!==si?s:{...s,items:toggleUrgentAndReorder(s.items, ii)}))}
                       onSetDeadline={(d) => persistPowerUp(powerUp.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,deadline:d})}))}
                       onSetExecutionDate={(d) => persistPowerUp(powerUp.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,executionDate:d})}))}
                       onExecuteToday={() => {
@@ -1478,7 +1491,7 @@ function Planner({ onReset, user, onSignOut }) {
                       onMoveCategory={() => setPuActions({si,ii,item:section.items[ii],section,isProject:true})}
                       onEditText={(newText) => persistProjects(projects.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,text:newText})}))}
                       onEditRecurs={(recurs) => persistProjects(projects.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,recurs})}))}
-                      onToggleUrgent={() => persistProjects(projects.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,urgent:!it.urgent})}))}
+                      onToggleUrgent={() => persistProjects(projects.map((s,i)=>i!==si?s:{...s,items:toggleUrgentAndReorder(s.items, ii)}))}
                       onSetDeadline={(d) => persistProjects(projects.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,deadline:d})}))}
                       onSetExecutionDate={(d) => persistProjects(projects.map((s,i)=>i!==si?s:{...s,items:s.items.map((it,j)=>j!==ii?it:{...it,executionDate:d})}))}
                       onExecuteToday={() => {
