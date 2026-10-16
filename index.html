@@ -213,6 +213,10 @@ body.focusing{overflow:hidden}
 .f-btn.primary{background:var(--sun);color:var(--sun-ink);border-color:var(--sun)}
 .brand-r{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
 .pomo-set{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.old-banner{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin:14px 0 0;padding:14px 16px;border:1px solid var(--sun);background:var(--sun-soft);border-radius:var(--r)}
+.old-banner div:first-child{display:grid;gap:2px;min-width:0;flex:1 1 260px}
+.old-banner span{color:var(--muted);font-size:.88rem}
+.ob-actions{display:flex;gap:8px}
 .acct{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px 3px 3px;font-size:.8rem;color:var(--muted)}
 .acct .av{width:20px;height:20px;border-radius:50%;background:var(--surface-2);color:var(--fg);display:grid;place-items:center;font-weight:700;font-size:.72rem}
 .acct.armed{color:var(--danger);border-color:var(--danger);padding-left:10px}
@@ -262,6 +266,10 @@ body.focusing{overflow:hidden}
 .f-mode.brk{color:var(--ok)}
 .f-clock.brk{color:var(--ok)}
 .f-bar.brk span{background:var(--ok)}
+.head-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.sec-list{display:block}
+.sec-grip{color:var(--faint);cursor:grab;touch-action:none;user-select:none;font-size:.9rem;letter-spacing:-2px;padding:0 2px 0 6px}
+.sec-grip:hover{color:var(--fg)}
 .sortable-ghost{opacity:.35}
 .sortable-chosen{background:var(--surface-2)}
 
@@ -305,6 +313,7 @@ dialog::backdrop{background:rgba(5,7,12,.6)}
 
 
 <div class="wrap">
+  <div class="old-banner" id="oldBanner" hidden></div>
   <div class="top">
     <div class="brand">
       <div class="logo"><h1>G<span>é</span>rak</h1><p class="tagline">Get it done</p></div>
@@ -448,6 +457,66 @@ function rtdbDoc(r){
     }
   };
 }
+/* Convert an old Gérak record (users/<uid> node) into tabs/sections/tasks for the new Gérak. */
+function convertOldGerak(old, uid, COLORS){
+  const out={tabs:[],sections:[],tasks:[]};
+  if(!old||typeof old!=="object") return out;
+  const pad=n=>String(n).padStart(2,"0");
+  const dt=(v,defT)=>{ if(!v||typeof v!=="string") return ""; if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return v+"T"+defT; if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)) return v.slice(0,16); return ""; };
+  const iso=v=>{ if(!v) return null; const d=new Date(/^\d{4}-\d{2}-\d{2}$/.test(v)?v+"T12:00:00":v); return isNaN(d)?null:d.toISOString(); };
+  const secs=it=>{ const n=+(it.actualTime||it.timeSpent||0); return isFinite(n)&&n>0?n*1000:0; };
+  const clean=s=>String(s||"").replace(/\s+/g," ").trim();
+  let ci=0; const color=c=>/^#[0-9a-f]{6}$/i.test(c||"")?c:COLORS[(ci++)%COLORS.length];
+  const tabByName={}, secByKey={};
+  function tab(name,c){ if(tabByName[name]) return tabByName[name]; const t={id:uid(),name,color:color(c)}; out.tabs.push(t); tabByName[name]=t; return t; }
+  function section(tabObj,label){ const k=tabObj.id+"|"+label; if(secByKey[k]) return secByKey[k]; const s={id:uid(),tabId:tabObj.id,name:label||"General",collapsed:false}; out.sections.push(s); secByKey[k]=s; return s; }
+  const orderOf={};
+  function add(sec,it,extra){
+    const title=clean(it.text); if(!title) return;
+    const o=orderOf[sec.id]=(orderOf[sec.id]??-1)+1;
+    out.tasks.push(Object.assign({id:uid(),sectionId:sec.id,title,exec:dt(it.executionDate,"09:00"),due:dt(it.deadline,"17:00"),
+      today:false,done:false,auto:true,order:o,spent:secs(it),estP:0},extra||{}));
+  }
+  const groupsTab=[["today","Old Today"],["powerUp","Future"],["projects","Projects"]];
+  const labelToSec={};
+  for(const [key,tabName] of groupsTab){
+    const groups=Array.isArray(old[key])?old[key]:[];
+    if(!groups.length) continue;
+    const t=tab(tabName, groups[0]?.accent);
+    for(const g of groups){
+      const s=section(t,clean(g.label)||"General");
+      if(g.id) labelToSec[g.id]=s; if(g.label) labelToSec["L:"+clean(g.label).toLowerCase()]=s;
+      for(const it of (Array.isArray(g.items)?g.items:Object.values(g.items||{}))){
+        if(!it) continue;
+        add(s,it, it.done?{done:true,doneAt:iso(it.completedAt)||new Date().toISOString()}:{today:key==="today"&&false});
+      }
+    }
+  }
+  const done=Array.isArray(old.done)?old.done:Object.values(old.done||{});
+  let archive=null;
+  for(const it of done){
+    if(!it) continue;
+    const label=clean(it.category||it.sectionInfo?.label||"");
+    let s=(it.section&&labelToSec[it.section])||(label&&labelToSec["L:"+label.toLowerCase()]);
+    if(!s){ archive=archive||tab("Archive","#8a90a0"); s=section(archive,label||"General"); labelToSec["L:"+(label||"general").toLowerCase()]=s; }
+    add(s,it,{done:true,doneAt:iso(it.completedAt||it.pushedAt)||new Date().toISOString()});
+  }
+  return out;
+}
+let oldData=null, oldDismiss=false;
+function oldCount(){ if(!oldData) return 0; let n=0; for(const k of ["today","powerUp","projects"]) for(const g of (Array.isArray(oldData[k])?oldData[k]:[])) n+=(Array.isArray(g.items)?g.items:Object.values(g.items||{})).length; n+=(Array.isArray(oldData.done)?oldData.done:Object.values(oldData.done||{})).length; return n; }
+function renderOldBanner(){
+  const el=document.getElementById("oldBanner"); const n=oldCount();
+  if(!n||oldDismiss||S.settings?.oldImported){ el.hidden=true; return; }
+  el.hidden=false;
+  el.innerHTML=`<div><strong>We found ${n} tasks from the old Gérak.</strong><span>They'll come in as new tabs: Future, Projects, Old Today and Archive. Done tasks go to Done.</span></div>
+    <div class="ob-actions"><button class="primary" data-act="oldImport">Bring them in</button><button class="ghost" data-act="oldLater">Not now</button></div>`;
+}
+function importOld(){
+  const r=convertOldGerak(oldData,uid,COLORS);
+  S.tabs.push(...r.tabs); S.sections.push(...r.sections); S.tasks.push(...r.tasks);
+  S.settings.oldImported=true; commit(); toast(`Brought in ${r.tasks.length} tasks from the old Gérak.`);
+}
 function showGate(on){ document.getElementById("gate").hidden=!on; document.querySelector(".wrap").hidden=on; if(on) document.getElementById("gateErr").textContent=""; }
 function gateError(e){ const c=e&&e.code; if(!c) return;
   const m=c==="auth/unauthorized-domain"?"This web address is not approved in Firebase yet. Add it under Authentication, Settings, Authorised domains."
@@ -520,6 +589,7 @@ function render(){
   bindSortables();
   renderFocus();
   applyTheme();
+  renderOldBanner();
   { const a=document.getElementById("acct"); a.hidden=!(FB_ON&&me); a.classList.remove("armed");
     if(me){ const ini=(me.name||"?").trim()[0]?.toUpperCase()||"?"; a.innerHTML=`<span class="av">${esc(ini)}</span>Sign out`; a.title=me.email; } }
   document.getElementById("pomoSet").innerHTML=`<span class="tm"></span>Work ${W()/60000} · Break ${B()/60000}`;
@@ -643,11 +713,12 @@ function renderArea(tab){
   if(!tab) return renderToday();
   const secs=S.sections.filter(s=>s.tabId===tab.id);
   let h=`<div class="panel-head"><div><h2>${esc(tab.name)}</h2><div class="sub">${secs.length} section${secs.length===1?"":"s"}</div></div>
-    <button class="ghost" data-act="tabMenu" data-id="${tab.id}">Edit tab</button></div>`;
+    <div class="head-actions">${secs.length>1?`<button class="ghost" data-act="toggleAll" data-id="${tab.id}">${secs.some(x=>!x.collapsed)?"Collapse all":"Expand all"}</button>`:""}<button class="ghost" data-act="tabMenu" data-id="${tab.id}">Edit tab</button></div></div>
+  <div class="sec-list" data-tab="${tab.id}">`;
   for(const s of secs){
     const all=secTasks(s.id), act=all.filter(t=>!t.done), dn=all.filter(t=>t.done);
     h+=`<section class="section ${s.collapsed?"collapsed":""}" data-sec="${s.id}">
-      <div class="sec-head"><button class="sec-toggle" data-act="collapse" data-id="${s.id}" aria-expanded="${!s.collapsed}"><span class="chev"></span>${esc(s.name)} <span class="count">${act.length}</span></button>
+      <div class="sec-head"><span class="sec-grip" title="Drag to move section" aria-hidden="true">⋮⋮</span><button class="sec-toggle" data-act="collapse" data-id="${s.id}" aria-expanded="${!s.collapsed}"><span class="chev"></span>${esc(s.name)} <span class="count">${act.length}</span></button>
       <button class="icon-btn" data-act="secMenu" data-id="${s.id}" aria-label="Edit section ${esc(s.name)}">⋯</button></div>
       <div class="sec-body">${colsHead}
         <ul class="list" data-list="area" data-sec="${s.id}">${act.map(t=>row(t,"area")).join("")}</ul>
@@ -655,6 +726,7 @@ function renderArea(tab){
         ${dn.length?`<button type="button" class="done-link" data-act="seeDone" data-tab="${tab.id}" data-sec="${s.id}">${dn.length} done in this section →</button>`:""}
       </div></section>`;
   }
+  h+=`</div>`;
   h+=`<button class="add-section" data-act="addSection" data-id="${tab.id}">+ Add section</button>`;
   panel.innerHTML=h;
 }
@@ -749,6 +821,16 @@ let sortables=[];
 function bindSortables(){
   sortables.forEach(s=>s.destroy()); sortables=[];
   if(!window.Sortable) return;
+  panel.querySelectorAll(".sec-list").forEach(box=>{
+    sortables.push(Sortable.create(box,{handle:".sec-grip",draggable:".section",animation:150,group:"sections",
+      onEnd(){
+        const tid=box.dataset.tab, ids=[...box.querySelectorAll(":scope > .section")].map(el=>el.dataset.sec);
+        const mine=ids.map(id=>secOf(id)).filter(Boolean);
+        const out=[]; let placed=false;
+        for(const x of S.sections){ if(x.tabId===tid){ if(!placed){ out.push(...mine); placed=true; } } else out.push(x); }
+        S.sections=out; commit();
+      }}));
+  });
   panel.querySelectorAll('ul.list[data-list="area"],ul.list[data-list="today"]').forEach(ul=>{
     const isToday=ul.dataset.list==="today";
     sortables.push(Sortable.create(ul,{
@@ -780,6 +862,7 @@ document.addEventListener("click",e=>{
   switch(act){
     case "tab": S.activeTab=b.dataset.id; addingTab=false; saveLocal(); render(); break;
     case "addTab": addingTab=true; render(); break;
+    case "toggleAll": { const secs=S.sections.filter(x=>x.tabId===b.dataset.id); const anyOpen=secs.some(x=>!x.collapsed); secs.forEach(x=>x.collapsed=anyOpen); commit(); break; }
     case "collapse": { const s=secOf(b.dataset.id); s.collapsed=!s.collapsed; commit(); break; }
     case "done": if(S.brk&&S.brk.id===t.id) S.brk=null; t.done=!t.done; t.doneAt=t.done?new Date().toISOString():null; if(t.done) stopTimer(t); commit(); break;
     case "timer": {
@@ -789,6 +872,8 @@ document.addEventListener("click",e=>{
     case "focus": openFocus(t.id); break;
     case "settings": openSettings(); break;
     case "import": openImport(); break;
+    case "oldImport": importOld(); break;
+    case "oldLater": oldDismiss=true; renderOldBanner(); break;
     case "signout": if(b.classList.contains("armed")){ fbAuth&&fbAuth.signOut(); } else { b.classList.add("armed"); b.textContent="Tap again to sign out"; setTimeout(()=>{ if(b.isConnected) render(); },3000); } break;
     case "theme": S.settings.theme=curTheme()==="dark"?"light":"dark"; commit(); break;
     case "fexit": closeFocus(); break;
@@ -871,10 +956,11 @@ function openSection(s,tabId){
   const isNew=!s;
   sheet.innerHTML=`<h3>${isNew?"Add section":"Edit section"}</h3>
     <div class="field"><label for="f-sname">Section name</label><input id="f-sname" value="${esc(s?.name||"")}" maxlength="40" placeholder="e.g. Teaching"></div>
+    ${isNew?"":`<div class="field"><label for="f-stab">Tab</label><select id="f-stab">${S.tabs.map(t=>`<option value="${t.id}" ${t.id===s.tabId?"selected":""}>${esc(t.name)}</option>`).join("")}</select><span class="hint">Move this section and all its tasks to another tab.</span></div>`}
     <div class="actions">${isNew?"<span></span>":`<button type="button" class="danger" id="f-del">Delete section and its tasks</button>`}<button class="primary" id="f-save">${isNew?"Add":"Save"}</button></div>`;
   if(!isNew) armDelete(document.getElementById("f-del"),()=>{ S.tasks=S.tasks.filter(x=>x.sectionId!==s.id); S.sections=S.sections.filter(x=>x!==s); commit(); });
   document.getElementById("f-save").onclick=ev=>{ ev.preventDefault(); const name=document.getElementById("f-sname").value.trim(); if(!name) return;
-    if(isNew) S.sections.push({id:uid(),tabId,name,collapsed:false}); else s.name=name; dlg.close(); commit(); };
+    if(isNew) S.sections.push({id:uid(),tabId,name,collapsed:false}); else { s.name=name; const nt=document.getElementById("f-stab").value; if(nt&&nt!==s.tabId){ S.sections=S.sections.filter(x=>x!==s); s.tabId=nt; S.sections.push(s); } } dlg.close(); commit(); };
   dlg.showModal(); setTimeout(()=>document.getElementById("f-sname").focus(),30);
 }
 function openTab(tab){
