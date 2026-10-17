@@ -299,6 +299,10 @@ body.dragging .tab[data-drop],body.dragging .sec-head[data-drop]{outline:1.5px d
 .rm-sub .dot{width:8px;height:8px;border-radius:50%}
 .rm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
 .rm-more{font-size:.8rem;color:var(--faint)}
+.t-crumb{display:flex;align-items:center;gap:6px;font-size:.74rem;color:var(--muted);margin-bottom:2px}
+.t-crumb .dot{width:7px;height:7px;border-radius:50%}
+.t-crumb .rank{font-variant-numeric:tabular-nums;font-weight:700;color:var(--sun);min-width:1.2em}
+.today-list .list{min-height:10px}
 .sortable-ghost{opacity:.35}
 .sortable-chosen{background:var(--surface-2)}
 
@@ -730,6 +734,7 @@ document.getElementById("remind")?.addEventListener("click",e=>{
 });
 setInterval(renderRemind,15000);
 function completeTask(t){
+  delete t.todayOrder;
   if(S.brk&&S.brk.id===t.id) S.brk=null; stopTimer(t);
   t.done=true; t.doneAt=new Date().toISOString();
   const nt=spawnNext(t);
@@ -801,13 +806,13 @@ function renderFocus(){
 }
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&focusId&&!dlg.open) closeFocus(); });
 
-function row(t,ctx){
+function row(t,ctx,rank){
   const ec=execClass(t), dc=dueClass(t);
   const ex=fmt(t.exec), du=fmt(t.due), tc=timerChip(t);
   return `<li class="row ${t.done?"done":""} ${t.today&&!t.done&&ctx!=="today"?"is-today":""} ${t.runStart?"running":""} ${t.urgent&&!t.done?"urgent":""}" data-id="${t.id}">
     <span class="grip" aria-hidden="true" title="Drag to move">⋮⋮</span>
     <button class="check" data-act="done" aria-label="${t.done?"Mark not done":"Mark done"}"></button>
-    <div class="title"><div class="t-line"><button class="t-name" data-act="edit" data-focus="title">${t.urgent&&!t.done?'<span class="urg-pill">Urgent</span>':""}${esc(t.title)}${t.recur&&t.recur!=="none"?`<span class="rec" title="${RECUR[t.recur]}" aria-label="${RECUR[t.recur]}">↻</span>`:""}${t.sample?'<span class="sample">sample</span>':""}</button>${t.done?"":`<button class="flag ${t.urgent?"on":""}" data-act="urgent" aria-pressed="${!!t.urgent}" aria-label="${t.urgent?"Remove urgent":"Mark urgent"}" title="${t.urgent?"Remove urgent":"Mark urgent"}"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 14.5V2M3.5 2.5h8l-1.8 3 1.8 3h-8" fill="${t.urgent?"currentColor":"none"}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>`}</div>
+    <div class="title">${ctx==="today"?(()=>{ const sc=secOf(t.sectionId), tb=sc&&tabOf(sc.tabId); return tb?`<div class="t-crumb"><span class="rank">${rank}</span><span class="dot" style="background:${tb.color}"></span>${esc(tb.name)} · ${esc(sc.name)}</div>`:""; })():""}<div class="t-line"><button class="t-name" data-act="edit" data-focus="title">${t.urgent&&!t.done?'<span class="urg-pill">Urgent</span>':""}${esc(t.title)}${t.recur&&t.recur!=="none"?`<span class="rec" title="${RECUR[t.recur]}" aria-label="${RECUR[t.recur]}">↻</span>`:""}${t.sample?'<span class="sample">sample</span>':""}</button>${t.done?"":`<button class="flag ${t.urgent?"on":""}" data-act="urgent" aria-pressed="${!!t.urgent}" aria-label="${t.urgent?"Remove urgent":"Mark urgent"}" title="${t.urgent?"Remove urgent":"Mark urgent"}"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 14.5V2M3.5 2.5h8l-1.8 3 1.8 3h-8" fill="${t.urgent?"currentColor":"none"}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>`}</div>
       <div class="meta">
         <button data-act="edit" data-focus="exec" class="${ex?ec:"empty"}"><b>Start</b> ${ex||"set"}</button>
         <button data-act="edit" data-focus="due" class="${du?dc:"empty"}"><b>Due</b> ${du||"set"}</button>
@@ -844,22 +849,22 @@ function renderArea(tab){
   panel.innerHTML=h;
 }
 
+function todayList(){
+  const ts=S.tasks.filter(t=>t.today&&!t.done&&secOf(t.sectionId));
+  // tasks new to Today go to the bottom, in their tab/section order
+  const pos=t=>{ const s=secOf(t.sectionId); return S.tabs.findIndex(x=>x.id===s.tabId)*1e6+S.sections.indexOf(s)*1e3+(t.order||0); };
+  let max=Math.max(-1,...ts.filter(t=>typeof t.todayOrder==="number").map(t=>t.todayOrder));
+  ts.filter(t=>typeof t.todayOrder!=="number").sort((a,b)=>pos(a)-pos(b)).forEach(t=>{ t.todayOrder=++max; });
+  return ts.sort((a,b)=>a.todayOrder-b.todayOrder);
+}
 function renderToday(){
-  const groups=[];
-  for(const tab of S.tabs) for(const s of S.sections.filter(x=>x.tabId===tab.id)){
-    const ts=viewSort(secTasks(s.id).filter(t=>t.today&&!t.done));
-    if(ts.length) groups.push({tab,s,ts});
-  }
-  const n=S.tasks.filter(t=>t.today&&!t.done).length;
+  const ts=todayList(), n=ts.length;
   const d=new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long"});
-  let h=`<div class="panel-head"><div><h2>Today</h2><div class="sub">${d} · ${n} to do</div></div></div>`;
-  if(!groups.length){
+  let h=`<div class="panel-head"><div><h2>Today</h2><div class="sub">${d} · ${n} to do${n>1?" · drag ⋮⋮ to set your order":""}</div></div></div>`;
+  if(!n){
     h+=`<div class="empty-state"><div class="sunmark"></div><strong>Nothing pulled into Today yet</strong>Open any tab and switch on <b>Today</b> beside a task.</div>`;
-  }
-  for(const g of groups){
-    h+=`<section class="section" data-sec="${g.s.id}">
-      <div class="sec-head"><div class="sec-toggle" style="cursor:default"><span class="dot" style="width:9px;height:9px;border-radius:50%;background:${g.tab.color}"></span>${esc(g.tab.name)} <span class="crumb">· ${esc(g.s.name)}</span></div></div>
-      ${colsHead}<ul class="list" data-list="today" data-sec="${g.s.id}">${g.ts.map(t=>row(t,"today")).join("")}</ul></section>`;
+  } else {
+    h+=`<section class="section today-list">${colsHead}<ul class="list" data-list="today">${ts.map((t,i)=>row(t,"today",i+1)).join("")}</ul></section>`;
   }
   panel.innerHTML=h;
 }
@@ -1000,12 +1005,13 @@ function bindSortables(){
   panel.querySelectorAll('ul.list[data-list="area"],ul.list[data-list="today"]').forEach(ul=>{
     const isToday=ul.dataset.list==="today";
     sortables.push(Sortable.create(ul,{
-      group: isToday?"today-"+ul.dataset.sec:"area",
+      group: isToday?{name:"today",pull:false,put:false}:"area",
       handle:".grip", animation:150, delay:0, forceFallback:true, fallbackOnBody:true, fallbackTolerance:3,
       onStart(){ dragStart(); },
       onEnd(ev){
         const hit=dragStop(), moving=taskOf(ev.item.dataset.id);
         if(hit&&moving&&dropOn(moving,hit)){ commit(); return; }
+        if(isToday){ [...ul.querySelectorAll("li.row")].forEach((li,i)=>{ const x=taskOf(li.dataset.id); if(x) x.todayOrder=i; }); commit(); return; }
         const target=ev.to, sid=target.dataset.sec;
         const ids=[...target.querySelectorAll("li.row")].map(li=>li.dataset.id);
         const moved=taskOf(ev.item.dataset.id);
@@ -1027,7 +1033,7 @@ function dragStop(){ ["mousemove","touchmove","pointermove"].forEach(n=>document
   const el=hotEl; hotEl&&hotEl.classList.remove("drop-hot"); hotEl=null; return el; }
 function dropOn(t,el){
   const kind=el.dataset.drop, id=el.dataset.id;
-  if(kind==="today"){ if(t.today) return false; t.today=true; t.auto=true; toast(`"${t.title}" is in Today.`); return true; }
+  if(kind==="today"){ if(t.today) return false; t.today=true; t.auto=true; delete t.todayOrder; toast(`"${t.title}" is in Today.`); return true; }
   if(kind==="done"){ completeTask(t); return true; }
   let sec=null;
   if(kind==="sec") sec=secOf(id);
@@ -1069,7 +1075,7 @@ document.addEventListener("click",e=>{
     case "theme": S.settings.theme=curTheme()==="dark"?"light":"dark"; commit(); break;
     case "fexit": closeFocus(); break;
     case "fdone": completeTask(t); closeFocus(); commit(); break;
-    case "today": t.today=!t.today; if(t.today) t.auto=true; commit(); break;
+    case "today": t.today=!t.today; if(t.today) t.auto=true; delete t.todayOrder; commit(); break;
     case "edit": openTask(t,b.dataset.focus); break;
     case "secMenu": openSection(secOf(b.dataset.id)); break;
     case "tabMenu": openTab(tabOf(b.dataset.id)); break;
