@@ -273,6 +273,32 @@ body.focusing{overflow:hidden}
 .sortable-fallback{pointer-events:none;opacity:.9;box-shadow:0 8px 24px rgba(0,0,0,.35);border-radius:8px}
 body.dragging .tab[data-drop],body.dragging .sec-head[data-drop]{outline:1.5px dashed var(--line);outline-offset:-3px}
 .drop-hot{outline:2px solid var(--sun)!important;outline-offset:-3px;background:var(--sun-soft)!important;color:var(--fg)!important}
+.title .t-line{display:flex;align-items:flex-start;gap:6px}
+.title .t-line .t-name{flex:1;min-width:0}
+.title .flag{flex:none;width:auto;background:none;border:none;padding:3px;border-radius:5px;color:var(--faint);opacity:.55;display:inline-grid;place-items:center}
+.row:hover .flag,.title .flag:focus-visible{opacity:1}
+.title .flag:hover{color:var(--danger);opacity:1}
+.title .flag.on{color:var(--danger);opacity:1}
+.urg-pill{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:var(--danger);color:var(--bg);border-radius:4px;padding:1px 5px;margin-right:6px;vertical-align:2px}
+.row.urgent,.plan-row.urgent{box-shadow:inset 3px 0 0 var(--danger)}
+.rec{color:var(--muted);margin-left:6px;font-size:.9rem}
+.chk,.field label.chk{display:flex;align-items:center;gap:8px;font-size:.92rem;color:var(--fg);text-transform:none;letter-spacing:0;padding:8px 0}
+.tab .cal{color:var(--muted);font-size:.95rem}
+.plan-row{display:grid;grid-template-columns:26px minmax(0,1fr) 54px;gap:10px;align-items:center;padding:9px 10px;border-bottom:1px solid var(--line);background:var(--bg)}
+.plan-row:last-child{border-bottom:none}
+.plan-row .t-name{background:none;border:none;padding:0;text-align:left;width:100%;overflow-wrap:anywhere}
+.late-head span:first-child{color:var(--danger)}
+.by-seg{margin-bottom:12px;max-width:420px}
+.remind{position:fixed;inset:0;z-index:35;display:grid;place-items:center;background:rgba(5,7,12,.55);padding:16px}
+.rm-card{width:min(420px,100%);background:var(--surface);border:1px solid var(--line);border-top:4px solid var(--sun);border-radius:14px;padding:18px;display:grid;gap:8px;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+.rm-card.due{border-top-color:var(--danger)}
+.rm-kind{font-size:.75rem;text-transform:uppercase;letter-spacing:.12em;color:var(--sun);font-weight:700}
+.rm-card.due .rm-kind{color:var(--danger)}
+.rm-title{font-family:var(--display);font-weight:600;font-size:1.3rem;overflow-wrap:anywhere}
+.rm-sub{color:var(--muted);font-size:.9rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rm-sub .dot{width:8px;height:8px;border-radius:50%}
+.rm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.rm-more{font-size:.8rem;color:var(--faint)}
 .sortable-ghost{opacity:.35}
 .sortable-chosen{background:var(--surface-2)}
 
@@ -309,6 +335,12 @@ dialog::backdrop{background:rgba(5,7,12,.6)}
 .danger{background:none;border:1px solid var(--line);color:var(--danger);border-radius:8px;padding:8px 12px}
 .danger.armed{background:var(--danger);color:var(--bg);border-color:var(--danger)}
 .foot{color:var(--faint);font-size:.8rem;text-align:center;margin-top:16px}
+/* Phone in portrait: show tasks only */
+@media (orientation:portrait) and (max-width:900px){
+  .row .meta,.row .d-cell,.row .t-cell,.cols .c-date{display:none!important}
+  .cols,.row{grid-template-columns:18px 26px minmax(0,1fr) 54px!important}
+}
+.f-start{justify-self:start}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -340,6 +372,7 @@ dialog::backdrop{background:rgba(5,7,12,.6)}
   </div>
 </div>
 <div class="focus" id="focus" role="dialog" aria-modal="true" aria-label="Focus mode" hidden></div>
+<div class="remind" id="remind" role="alertdialog" aria-live="assertive" hidden></div>
 <div class="toast" id="toast" role="status" hidden></div>
 <dialog id="dlg"><form method="dialog" class="sheet" id="sheet"></form></dialog>
 
@@ -353,7 +386,7 @@ const localISO = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate
 const addDays = (n,h,m=0) => { const d=new Date(); d.setDate(d.getDate()+n); d.setHours(h,m,0,0); return localISO(d); };
 
 function starter(pub){
-  if(pub) return starterPublic();
+  return starterPublic();
   const t = [{id:"hwu",name:"HWU",color:COLORS[0]},{id:"res",name:"Research",color:COLORS[1]},{id:"kit",name:"Kitchen",color:COLORS[4]},{id:"biz",name:"Business",color:COLORS[3]}];
   const s = [
     {id:"s1",tabId:"hwu",name:"Teaching",collapsed:false},{id:"s2",tabId:"hwu",name:"Research",collapsed:false},
@@ -370,15 +403,17 @@ function starter(pub){
 }
 
 function starterPublic(){
-  const t=[{id:"work",name:"Work",color:COLORS[0]},{id:"study",name:"Study",color:COLORS[1]},{id:"home",name:"Home",color:COLORS[4]}];
+  const t=[{id:"work",name:"Work",color:COLORS[0]},{id:"home",name:"Home",color:COLORS[4]},{id:"leisure",name:"Leisure",color:COLORS[3]}];
   const s=[{id:"w1",tabId:"work",name:"Projects",collapsed:false},{id:"w2",tabId:"work",name:"Admin",collapsed:false},
-    {id:"st1",tabId:"study",name:"Assignments",collapsed:false},{id:"h1",tabId:"home",name:"Errands",collapsed:false}];
+    {id:"h1",tabId:"home",name:"Chores",collapsed:false},{id:"h2",tabId:"home",name:"Errands",collapsed:false},
+    {id:"l1",tabId:"leisure",name:"Hobbies",collapsed:false}];
   const k=(sectionId,title,exec,due,today,order,p)=>({id:uid(),sectionId,title,exec,due,today,done:false,auto:!!today,order,sample:true,estP:p,spent:0});
   return {v:1,activeTab:"today",settings:{work:10,brk:5},tabs:t,sections:s,tasks:[
     k("w1","Plan this week's priorities",addDays(0,9),addDays(0,17),true,0,2),
     k("w2","Reply to important emails",addDays(0,14),addDays(1,12),true,0,1),
-    k("st1","Start the next assignment",addDays(1,10),addDays(7,17),false,0,3),
-    k("h1","Buy groceries","",addDays(2,19),false,0,1)]};
+    k("h1","Laundry","",addDays(1,20),false,0,2),
+    k("h2","Buy groceries","",addDays(2,19),false,0,1),
+    k("l1","Go for a walk or run",addDays(1,18),"",false,0,3)]};
 }
 let S = null;
 let LS = "gerak-board-v1";
@@ -402,7 +437,7 @@ async function flush(){
 let ready=false, unsub=null, me=null;
 function adopt(body){
   try{ const keepTab=S.activeTab; S=JSON.parse(body); normalize();
-    if(!S.tabs.some(t=>t.id===keepTab)&&keepTab!=="today"&&keepTab!=="done") S.activeTab="today"; else S.activeTab=keepTab;
+    if(!S.tabs.some(t=>t.id===keepTab)&&keepTab!=="today"&&keepTab!=="done"&&keepTab!=="upcoming") S.activeTab="today"; else S.activeTab=keepTab;
     saveLocal(); render(); setSync("on","Synced"); }catch(e){}
 }
 function listen(){
@@ -581,6 +616,7 @@ function render(){
   const todayCount=S.tasks.filter(t=>t.today&&!t.done).length;
   let h=`<button class="tab ${S.activeTab==="today"?"active":""}" data-act="tab" data-id="today" data-drop="today"><span class="dot" style="background:var(--sun)"></span>Today${todayCount?`<span class="badge">${todayCount}</span>`:""}</button>`;
   for(const t of S.tabs) h+=`<button class="tab ${S.activeTab===t.id?"active":""}" data-act="tab" data-id="${t.id}" data-drop="tab"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`;
+  h+=`<button class="tab ${S.activeTab==="upcoming"?"active":""}" data-act="tab" data-id="upcoming"><span class="cal" aria-hidden="true">◷</span>Upcoming</button>`;
   h+=`<button class="tab ${S.activeTab==="done"?"active":""}" data-act="tab" data-id="done" data-drop="done"><span class="tick" aria-hidden="true">✓</span>Done</button>`;
   h+= addingTab?`<span class="tab-new"><input id="newTab" placeholder="Tab name" maxlength="30" aria-label="New tab name"></span>`
               :`<button class="tab add" data-act="addTab" aria-label="Add tab" title="Add tab">+</button>`;
@@ -588,9 +624,11 @@ function render(){
   if(addingTab) document.getElementById("newTab").focus();
   if(S.activeTab==="today") renderToday();
   else if(S.activeTab==="done") renderDone();
+  else if(S.activeTab==="upcoming") renderUpcoming();
   else renderArea(tabOf(S.activeTab)||(S.activeTab="today",null));
   bindSortables();
   renderFocus();
+  renderRemind();
   applyTheme();
   renderOldBanner();
   { const a=document.getElementById("acct"); a.hidden=!(FB_ON&&me); a.classList.remove("armed");
@@ -626,6 +664,78 @@ function chime(){ try{ audioCtx=audioCtx||new (window.AudioContext||window.webki
     const s=audioCtx.currentTime+i*.25; g.gain.setValueAtTime(.0001,s); g.gain.exponentialRampToValueAtTime(.25,s+.02); g.gain.exponentialRampToValueAtTime(.0001,s+.6); o.start(s); o.stop(s+.65); }); }catch(e){} }
 let toastT=null;
 function toast(msg){ const el=document.getElementById("toast"); el.textContent=msg; el.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>el.hidden=true,8000); }
+const RECUR={none:"Does not repeat",daily:"Every day",weekdays:"Every weekday (Mon to Fri)",weekly:"Every week",monthly:"Every month"};
+function stepDate(d,r){ const x=new Date(d);
+  if(r==="daily") x.setDate(x.getDate()+1);
+  else if(r==="weekdays"){ do{ x.setDate(x.getDate()+1); }while(x.getDay()===0||x.getDay()===6); }
+  else if(r==="weekly") x.setDate(x.getDate()+7);
+  else if(r==="monthly") x.setMonth(x.getMonth()+1);
+  return x; }
+function spawnNext(t){
+  if(!t.recur||t.recur==="none"||t.recurSpawned) return null;
+  const now=Date.now();
+  let anchor=t.exec||t.due?new Date(t.exec||t.due):(()=>{ const d=new Date(); d.setHours(9,0,0,0); return d; })();
+  let n=0, probe=new Date(anchor); do{ probe=stepDate(probe,t.recur); n++; }while(probe.getTime()<=now&&n<1000);
+  const shift=v=>{ if(!v) return ""; let d=new Date(v); for(let i=0;i<n;i++) d=stepDate(d,t.recur); return localISO(d); };
+  const exec=t.exec||t.due?shift(t.exec):localISO(probe);
+  const nt={id:uid(),sectionId:t.sectionId,title:t.title,exec,due:shift(t.due),today:false,done:false,auto:false,
+    order:secTasks(t.sectionId).length,spent:0,estP:t.estP||0,recur:t.recur,urgent:!!t.urgent};
+  S.tasks.push(nt); t.recurSpawned=true; return nt;
+}
+const remShown=new Set();
+function pendingReminders(){
+  if(S.settings?.remind===false) return [];
+  const now=Date.now(), lead=(S.settings?.lead||60)*60000, out=[]; let ch=false;
+  for(const t of S.tasks){
+    if(t.done) continue;
+    if(t.snoozeUntil&&t.snoozeUntil>now) continue;
+    if(t.exec&&t.remExec!==t.exec){ const at=new Date(t.exec).getTime();
+      if(now>=at){ if(now-at<2*36e5) out.push({t,kind:"start"}); else { t.remExec=t.exec; ch=true; } } }
+    if(t.due&&t.remDue!==t.due){ const at=new Date(t.due).getTime();
+      if(now>=at-lead){ if(now-at<2*36e5) out.push({t,kind:"due"}); else { t.remDue=t.due; ch=true; } } }
+  }
+  if(ch) commit();
+  return out;
+}
+function renderRemind(){
+  const el=document.getElementById("remind"); if(!el||!S) return;
+  if(FB_ON&&!me){ el.hidden=true; return; }
+  const list=pendingReminders();
+  if(!list.length){ el.hidden=true; return; }
+  const r=list[0], t=r.t, key=r.kind+t.id+(r.kind==="start"?t.exec:t.due);
+  if(!remShown.has(key)){ remShown.add(key); chime();
+    try{ if(document.hidden&&"Notification" in window&&Notification.permission==="granted") new Notification(r.kind==="start"?"Time to start":"Deadline coming up",{body:t.title}); }catch(e){} }
+  const s=secOf(t.sectionId), tab=s&&tabOf(s.tabId), late=r.kind==="due"&&new Date(t.due)<Date.now();
+  el.innerHTML=`<div class="rm-card ${r.kind}">
+    <div class="rm-kind">${r.kind==="start"?"Time to start":late?"Deadline passed":"Deadline coming up"}</div>
+    <div class="rm-title">${esc(t.title)}</div>
+    <div class="rm-sub">${tab?`<span class="dot" style="background:${tab.color}"></span>${esc(tab.name)} · ${esc(s.name)} · `:""}${r.kind==="start"?`Start ${fmt(t.exec)}`:`Due ${fmt(t.due)}`}</div>
+    <div class="rm-actions">
+      ${r.kind==="start"?`<button class="primary" data-ract="start" data-id="${t.id}">Start now</button>`:`<button class="primary" data-ract="open" data-id="${t.id}">Open task</button>`}
+      <button class="ghost" data-ract="snooze" data-id="${t.id}">Snooze 5 min</button>
+      <button class="ghost" data-ract="ok" data-id="${t.id}" data-kind="${r.kind}">Got it</button>
+    </div>${list.length>1?`<div class="rm-more">+${list.length-1} more reminder${list.length>2?"s":""}</div>`:""}</div>`;
+  el.hidden=false;
+}
+document.getElementById("remind")?.addEventListener("click",e=>{
+  const b=e.target.closest("[data-ract]"); if(!b) return;
+  const t=taskOf(b.dataset.id); if(!t) return; const a=b.dataset.ract;
+  const list=pendingReminders(), r=list.find(x=>x.t===t)||{kind:b.dataset.kind||"start"};
+  const mark=()=>{ if(r.kind==="start") t.remExec=t.exec; else t.remDue=t.due; };
+  if(a==="snooze"){ t.snoozeUntil=Date.now()+5*60000; }
+  else if(a==="ok"){ mark(); }
+  else if(a==="start"){ mark(); S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); if(!t.runStart){ t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); } t.today=true; commit(); openFocus(t.id); renderRemind(); return; }
+  else if(a==="open"){ mark(); commit(); renderRemind(); openTask(t,"due"); return; }
+  commit(); renderRemind();
+});
+setInterval(renderRemind,15000);
+function completeTask(t){
+  if(S.brk&&S.brk.id===t.id) S.brk=null; stopTimer(t);
+  t.done=true; t.doneAt=new Date().toISOString();
+  const nt=spawnNext(t);
+  toast(nt?`Done. Next "${t.title}": ${fmt(nt.exec||nt.due)}.`:`Done: "${t.title}"`);
+}
+const viewSort=arr=>arr.slice().sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||a.order-b.order);
 const blockSeen={};
 setInterval(()=>{
   for(const t of S.tasks){ if(!t.runStart) continue;
@@ -694,10 +804,10 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&focusId&&!dlg.open
 function row(t,ctx){
   const ec=execClass(t), dc=dueClass(t);
   const ex=fmt(t.exec), du=fmt(t.due), tc=timerChip(t);
-  return `<li class="row ${t.done?"done":""} ${t.today&&!t.done&&ctx!=="today"?"is-today":""} ${t.runStart?"running":""}" data-id="${t.id}">
+  return `<li class="row ${t.done?"done":""} ${t.today&&!t.done&&ctx!=="today"?"is-today":""} ${t.runStart?"running":""} ${t.urgent&&!t.done?"urgent":""}" data-id="${t.id}">
     <span class="grip" aria-hidden="true" title="Drag to move">⋮⋮</span>
     <button class="check" data-act="done" aria-label="${t.done?"Mark not done":"Mark done"}"></button>
-    <div class="title"><button data-act="edit" data-focus="title">${esc(t.title)}${t.sample?'<span class="sample">sample</span>':""}</button>
+    <div class="title"><div class="t-line"><button class="t-name" data-act="edit" data-focus="title">${t.urgent&&!t.done?'<span class="urg-pill">Urgent</span>':""}${esc(t.title)}${t.recur&&t.recur!=="none"?`<span class="rec" title="${RECUR[t.recur]}" aria-label="${RECUR[t.recur]}">↻</span>`:""}${t.sample?'<span class="sample">sample</span>':""}</button>${t.done?"":`<button class="flag ${t.urgent?"on":""}" data-act="urgent" aria-pressed="${!!t.urgent}" aria-label="${t.urgent?"Remove urgent":"Mark urgent"}" title="${t.urgent?"Remove urgent":"Mark urgent"}"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3.5 14.5V2M3.5 2.5h8l-1.8 3 1.8 3h-8" fill="${t.urgent?"currentColor":"none"}" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>`}</div>
       <div class="meta">
         <button data-act="edit" data-focus="exec" class="${ex?ec:"empty"}"><b>Start</b> ${ex||"set"}</button>
         <button data-act="edit" data-focus="due" class="${du?dc:"empty"}"><b>Due</b> ${du||"set"}</button>
@@ -719,7 +829,7 @@ function renderArea(tab){
     <div class="head-actions">${secs.length>1?`<button class="ghost" data-act="toggleAll" data-id="${tab.id}">${secs.some(x=>!x.collapsed)?"Collapse all":"Expand all"}</button>`:""}<button class="ghost" data-act="tabMenu" data-id="${tab.id}">Edit tab</button></div></div>
   <div class="sec-list" data-tab="${tab.id}">`;
   for(const s of secs){
-    const all=secTasks(s.id), act=all.filter(t=>!t.done), dn=all.filter(t=>t.done);
+    const all=secTasks(s.id), act=viewSort(all.filter(t=>!t.done)), dn=all.filter(t=>t.done);
     h+=`<section class="section ${s.collapsed?"collapsed":""}" data-sec="${s.id}">
       <div class="sec-head" data-drop="sec" data-id="${s.id}"><span class="sec-grip" title="Drag to move section" aria-hidden="true">⋮⋮</span><button class="sec-toggle" data-act="collapse" data-id="${s.id}" aria-expanded="${!s.collapsed}"><span class="chev"></span>${esc(s.name)} <span class="count">${act.length}</span></button>
       <button class="icon-btn" data-act="secMenu" data-id="${s.id}" aria-label="Edit section ${esc(s.name)}">⋯</button></div>
@@ -737,7 +847,7 @@ function renderArea(tab){
 function renderToday(){
   const groups=[];
   for(const tab of S.tabs) for(const s of S.sections.filter(x=>x.tabId===tab.id)){
-    const ts=secTasks(s.id).filter(t=>t.today&&!t.done);
+    const ts=viewSort(secTasks(s.id).filter(t=>t.today&&!t.done));
     if(ts.length) groups.push({tab,s,ts});
   }
   const n=S.tasks.filter(t=>t.today&&!t.done).length;
@@ -809,7 +919,60 @@ function renderDone(){
   if(cur) h+=`</ul>`;
   panel.innerHTML=h;
 }
+const UF={by:"exec",range:"all",from:"",to:"",tab:"all",sec:"all"};
+function renderUpcoming(){
+  const secsOfTab=UF.tab==="all"?[]:S.sections.filter(s=>s.tabId===UF.tab);
+  if(UF.sec!=="all"&&!secsOfTab.some(s=>s.id===UF.sec)) UF.sec="all";
+  const today=dayKey(new Date()), byDue=UF.by==="due", keyOf=t=>byDue?t.due:t.exec;
+  const inR=k=>{ if(UF.range==="all") return true;
+    if(UF.range==="7"||UF.range==="30"){ const e=new Date(); e.setDate(e.getDate()+(+UF.range)-1); return k<=dayKey(e); }
+    if(UF.range==="custom") return (!UF.from||k>=UF.from)&&(!UF.to||k<=UF.to); return true; };
+  const pool=S.tasks.filter(t=>{ if(t.done||!keyOf(t)) return false; const s=secOf(t.sectionId); if(!s) return false;
+    if(UF.tab!=="all"&&s.tabId!==UF.tab) return false; if(UF.sec!=="all"&&s.id!==UF.sec) return false; return true; });
+  const overdue=pool.filter(t=>byDue?new Date(t.due)<Date.now():dayKey(t.exec)<today).sort((a,b)=>new Date(keyOf(a))-new Date(keyOf(b)));
+  const list=pool.filter(t=>!overdue.includes(t)&&dayKey(keyOf(t))>=today&&inR(dayKey(keyOf(t))))
+    .sort((a,b)=>new Date(keyOf(a))-new Date(keyOf(b))||(b.urgent?1:0)-(a.urgent?1:0));
+  let h=`<div class="panel-head"><div><h2>Upcoming</h2><div class="sub">${list.length} planned${overdue.length?` · ${overdue.length} ${byDue?"overdue":"start date passed"}`:""}</div></div></div>
+  <div class="seg by-seg" role="tablist" aria-label="Sort by">
+    <button type="button" role="tab" aria-selected="${!byDue}" data-act="ufBy" data-by="exec">By execution date</button>
+    <button type="button" role="tab" aria-selected="${byDue}" data-act="ufBy" data-by="due">By deadline</button>
+  </div>
+  <div class="filters">
+    <div class="field"><label for="uf-range">Date</label><select id="uf-range" data-uf="range">
+      ${[["all","All upcoming"],["7","Next 7 days"],["30","Next 30 days"],["custom","Choose dates"]].map(([v,l])=>`<option value="${v}" ${UF.range===v?"selected":""}>${l}</option>`).join("")}</select></div>
+    ${UF.range==="custom"?`<div class="field"><label for="uf-from">From</label><input type="date" id="uf-from" data-uf="from" value="${UF.from}"></div>
+      <div class="field"><label for="uf-to">To</label><input type="date" id="uf-to" data-uf="to" value="${UF.to}"></div>`:""}
+    <div class="field"><label for="uf-tab">Header</label><select id="uf-tab" data-uf="tab"><option value="all">All tabs</option>
+      ${S.tabs.map(t=>`<option value="${t.id}" ${UF.tab===t.id?"selected":""}>${esc(t.name)}</option>`).join("")}</select></div>
+    <div class="field"><label for="uf-sec">Sub-header</label><select id="uf-sec" data-uf="sec" ${UF.tab==="all"?"disabled":""}><option value="all">All sections</option>
+      ${secsOfTab.map(s=>`<option value="${s.id}" ${UF.sec===s.id?"selected":""}>${esc(s.name)}</option>`).join("")}</select></div>
+    ${UF.range!=="all"||UF.tab!=="all"?`<button type="button" class="ghost reset" data-act="resetUF">Reset</button>`:""}
+  </div>`;
+  const prow=t=>{ const s=secOf(t.sectionId), tab=tabOf(s.tabId);
+    return `<li class="plan-row ${t.urgent?"urgent":""}" data-id="${t.id}">
+      <button class="check" data-act="done" aria-label="Mark done"></button>
+      <div class="title"><button class="t-name" data-act="edit" data-focus="exec">${t.urgent?'<span class="urg-pill">Urgent</span>':""}${esc(t.title)}${t.recur&&t.recur!=="none"?`<span class="rec" title="${RECUR[t.recur]}">↻</span>`:""}</button>
+        <div class="meta2"><span class="crumb2"><span class="dot" style="background:${tab.color}"></span>${esc(tab.name)} · ${esc(s.name)}</span>${t.exec?`<span class="${execClass(t)}">Start ${fmt(t.exec)}</span>`:""}${t.due?`<span class="${dueClass(t)}">Due ${fmt(t.due)}</span>`:""}${estP(t)?`<span>Exp ${fmtMin(estMin(t))}</span>`:""}</div></div>
+      <button class="switch" role="switch" aria-checked="${!!t.today}" aria-label="Show in Today" data-act="today"></button></li>`; };
+  if(!overdue.length&&!list.length){
+    h+=`<div class="empty-state"><div class="sunmark"></div><strong>${pool.length?"Nothing planned for these filters":"No planned tasks yet"}</strong>${pool.length?"Try a wider date range or another tab.":byDue?"Give a task a deadline and it shows up here.":"Give a task an execution date and it shows up here."}</div>`;
+  }
+  if(overdue.length){ h+=`<div class="day-head late-head"><span>${byDue?"Overdue":"Start date passed, not done yet"}</span><span>${overdue.length}</span></div><ul class="list done-list">${overdue.map(prow).join("")}</ul>`; }
+  let cur="";
+  for(const t of list){ const k=dayKey(keyOf(t));
+    if(k!==cur){ if(cur) h+=`</ul>`; cur=k; const d=new Date(keyOf(t)), n=list.filter(x=>dayKey(keyOf(x))===k).length;
+      const tm=new Date(); tm.setDate(tm.getDate()+1);
+      const lbl=k===today?"Today":k===dayKey(tm)?"Tomorrow":d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+      h+=`<div class="day-head"><span>${lbl}</span><span>${n} ${byDue?"due":"to start"}</span></div><ul class="list done-list">`; }
+    h+=prow(t); }
+  if(cur) h+=`</ul>`;
+  panel.innerHTML=h;
+}
 document.addEventListener("change",e=>{
+  const uk=e.target.dataset?.uf; if(uk){ UF[uk]=e.target.value; if(uk==="tab") UF.sec="all";
+    if(uk==="range"&&UF.range==="custom"&&!UF.from){ UF.from=dayKey(new Date()); const d=new Date(); d.setDate(d.getDate()+13); UF.to=dayKey(d); }
+    render(); document.getElementById(e.target.id)?.focus(); return; }
+
   const k=e.target.dataset?.df; if(!k) return;
   DF[k]=e.target.value; if(k==="tab") DF.sec="all";
   if(k==="range"&&DF.range==="custom"&&!DF.from){ const d=new Date(); d.setDate(d.getDate()-6); DF.from=dayKey(d); DF.to=dayKey(new Date()); }
@@ -865,7 +1028,7 @@ function dragStop(){ ["mousemove","touchmove","pointermove"].forEach(n=>document
 function dropOn(t,el){
   const kind=el.dataset.drop, id=el.dataset.id;
   if(kind==="today"){ if(t.today) return false; t.today=true; t.auto=true; toast(`"${t.title}" is in Today.`); return true; }
-  if(kind==="done"){ if(S.brk&&S.brk.id===t.id) S.brk=null; stopTimer(t); t.done=true; t.doneAt=new Date().toISOString(); toast(`Done: "${t.title}"`); return true; }
+  if(kind==="done"){ completeTask(t); return true; }
   let sec=null;
   if(kind==="sec") sec=secOf(id);
   if(kind==="tab"){ const cur=secOf(t.sectionId); if(cur&&cur.tabId===id) return false;
@@ -885,13 +1048,14 @@ function reorder(sid,ids){
 /* ---------- actions ---------- */
 document.addEventListener("click",e=>{
   const b=e.target.closest("[data-act]"); if(!b) return;
-  const act=b.dataset.act, li=b.closest("li.row"), t=li?taskOf(li.dataset.id):(b.closest("#focus")?taskOf(focusId):null);
+  const act=b.dataset.act, li=b.closest("li.row,li.plan-row"), t=li?taskOf(li.dataset.id):(b.closest("#focus")?taskOf(focusId):null);
   switch(act){
     case "tab": S.activeTab=b.dataset.id; addingTab=false; saveLocal(); render(); break;
     case "addTab": addingTab=true; render(); break;
     case "toggleAll": { const secs=S.sections.filter(x=>x.tabId===b.dataset.id); const anyOpen=secs.some(x=>!x.collapsed); secs.forEach(x=>x.collapsed=anyOpen); commit(); break; }
     case "collapse": { const s=secOf(b.dataset.id); s.collapsed=!s.collapsed; commit(); break; }
-    case "done": if(S.brk&&S.brk.id===t.id) S.brk=null; t.done=!t.done; t.doneAt=t.done?new Date().toISOString():null; if(t.done) stopTimer(t); commit(); break;
+    case "done": if(t.done){ t.done=false; t.doneAt=null; } else completeTask(t); commit(); break;
+    case "urgent": t.urgent=!t.urgent; commit(); break;
     case "timer": {
       if(t.runStart) stopTimer(t);
       else { S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); chime.prime||(chime.prime=1, (()=>{ try{ audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)(); audioCtx.resume(); }catch(e){} })()); }
@@ -904,13 +1068,15 @@ document.addEventListener("click",e=>{
     case "signout": if(b.classList.contains("armed")){ fbAuth&&fbAuth.signOut(); } else { b.classList.add("armed"); b.textContent="Tap again to sign out"; setTimeout(()=>{ if(b.isConnected) render(); },3000); } break;
     case "theme": S.settings.theme=curTheme()==="dark"?"light":"dark"; commit(); break;
     case "fexit": closeFocus(); break;
-    case "fdone": if(S.brk&&S.brk.id===t.id) S.brk=null; stopTimer(t); t.done=true; t.doneAt=new Date().toISOString(); closeFocus(); commit(); toast(`Done: "${t.title}"`); break;
+    case "fdone": completeTask(t); closeFocus(); commit(); break;
     case "today": t.today=!t.today; if(t.today) t.auto=true; commit(); break;
     case "edit": openTask(t,b.dataset.focus); break;
     case "secMenu": openSection(secOf(b.dataset.id)); break;
     case "tabMenu": openTab(tabOf(b.dataset.id)); break;
     case "addSection": openSection(null,b.dataset.id); break;
     case "seeDone": DF.range="all"; DF.tab=b.dataset.tab; DF.sec=b.dataset.sec; S.activeTab="done"; saveLocal(); render(); break;
+    case "resetUF": Object.assign(UF,{range:"all",from:"",to:"",tab:"all",sec:"all"}); render(); break;
+    case "ufBy": UF.by=b.dataset.by; render(); break;
     case "resetDF": Object.assign(DF,{range:"all",from:"",to:"",tab:"all",sec:"all"}); render(); break;
     case "restore": case "delDone": {
       const dt=taskOf(b.closest("li.done-row").dataset.id); if(!dt) break;
@@ -954,11 +1120,19 @@ function openTask(t,focus){
       <div class="field"><label for="f-est">Expected (pomodoros)</label><input id="f-est" type="number" min="0" max="40" step="1" inputmode="numeric" value="${estP(t)||""}" placeholder="0"><span class="hint" id="f-est-h">${pomoTxt(estP(t))}</span></div>
       <div class="field"><label for="f-act">Actual (minutes)</label><input id="f-act" type="number" min="0" step="1" inputmode="numeric" value="${Math.round(elapsed(t)/60000)}"><span class="hint">${t.runStart?"Timer is running":"Fix it here if you forgot the timer"}</span></div>
     </div>
+    <div class="two">
+      <div class="field"><label for="f-rec">Repeat</label><select id="f-rec">${Object.entries(RECUR).map(([k,v])=>`<option value="${k}" ${(t.recur||"none")===k?"selected":""}>${v}</option>`).join("")}</select></div>
+      <div class="field"><label>Priority</label><label class="chk"><input type="checkbox" id="f-urg" ${t.urgent?"checked":""}> Urgent (goes to the top)</label></div>
+    </div>
     <div class="field"><label for="f-sec">Tab and section</label><select id="f-sec">${secOptions(t.sectionId,true)}</select></div>
     <div class="field" id="f-newwrap" hidden><label for="f-newname" id="f-newlbl">New section name</label><input id="f-newname" maxlength="40"></div>
+    ${t.done?"":`<button type="button" class="ghost f-start" id="f-start">▶ ${t.runStart?"Open focus mode":"Start timer in focus mode"}</button>`}
     <div class="actions"><button type="button" class="danger" id="f-del">Delete task</button><button class="primary" id="f-save" value="save">Save</button></div>`;
   sheet.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{ document.getElementById(b.dataset.clear).value=""; });
   armDelete(document.getElementById("f-del"),()=>{ S.tasks=S.tasks.filter(x=>x!==t); commit(); });
+  const fs=document.getElementById("f-start"); if(fs) fs.onclick=()=>{ dlg.close();
+    if(!t.runStart){ S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); commit(); }
+    openFocus(t.id); };
   document.getElementById("f-save").onclick=ev=>{ ev.preventDefault();
     const title=document.getElementById("f-title").value.trim(); if(title) t.title=title;
     const ex=document.getElementById("f-exec").value;
@@ -968,6 +1142,8 @@ function openTask(t,focus){
     if(isNewDest(ns)){ const made=makeCategory(ns,document.getElementById("f-newname").value); if(!made){ document.getElementById("f-newname").focus(); return; } ns=made; }
     if(ns!==t.sectionId){ t.sectionId=ns; t.order=secTasks(ns).length; }
     const p=parseInt(document.getElementById("f-est").value,10); t.estP=p>0?p:0; delete t.est;
+    const rc=document.getElementById("f-rec").value; if(rc!==(t.recur||"none")){ t.recur=rc; t.recurSpawned=false; }
+    t.urgent=document.getElementById("f-urg").checked;
     const am=parseInt(document.getElementById("f-act").value,10);
     if(!isNaN(am)&&am!==Math.round(elapsed(t)/60000)){ const run=!!t.runStart; t.spent=Math.max(0,am)*60000; t.runStart=run?Date.now():null; blockSeen[t.id]=Math.floor(t.spent/W()); }
     delete t.sample; autoToday(); dlg.close(); commit(); };
@@ -1008,19 +1184,24 @@ function openTab(tab){
 }
 function openSettings(){
   const st=S.settings||{work:10,brk:5};
-  sheet.innerHTML=`<h3>Pomodoro settings</h3>
+  sheet.innerHTML=`<h3>Pomodoro</h3>
     <div class="two">
       <div class="field"><label for="f-work">Work (minutes)</label><input id="f-work" type="number" min="1" max="120" step="1" inputmode="numeric" value="${st.work}"></div>
       <div class="field"><label for="f-brk">Break (minutes)</label><input id="f-brk" type="number" min="1" max="60" step="1" inputmode="numeric" value="${st.brk}"></div>
     </div>
     <div class="presets"><span class="hint">Quick pick</span>${[[10,5],[15,5],[25,5],[50,10]].map(([w,b])=>`<button type="button" class="ghost" data-w="${w}" data-b="${b}">${w} / ${b}</button>`).join("")}</div>
     <p class="hint" style="margin:0">After each work block the timer pauses and your break starts. Expected time on every task updates to match, since it is counted in pomodoros.</p>
+    <h3 style="margin-top:6px">Reminders</h3>
+    <label class="chk"><input type="checkbox" id="f-rem" ${st.remind===false?"":"checked"}> Pop up when a task's execution time arrives and before its deadline</label>
+    <div class="field"><label for="f-lead">Deadline alert</label><select id="f-lead">${[[15,"15 minutes before"],[30,"30 minutes before"],[60,"1 hour before"],[180,"3 hours before"],[1440,"1 day before"]].map(([v,l])=>`<option value="${v}" ${(st.lead||60)===v?"selected":""}>${l}</option>`).join("")}</select></div>
+    ${"Notification" in window?`<button type="button" class="ghost" id="f-notif">${Notification.permission==="granted"?"Background alerts are on":"Also alert me when Gérak is in the background"}</button><span class="hint">Reminders only work while Gérak is open in a tab.</span>`:`<span class="hint">Reminders only work while Gérak is open.</span>`}
     <div class="actions"><span></span><button class="primary" id="f-save">Save</button></div>`;
+  const nb=document.getElementById("f-notif"); if(nb) nb.onclick=async()=>{ try{ const r=await Notification.requestPermission(); nb.textContent=r==="granted"?"Background alerts are on":"Alerts were not allowed. Change it in your browser settings."; }catch(e){ nb.textContent="This browser can't show background alerts here."; } };
   sheet.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{ document.getElementById("f-work").value=b.dataset.w; document.getElementById("f-brk").value=b.dataset.b; });
   document.getElementById("f-save").onclick=ev=>{ ev.preventDefault();
     const w=Math.min(120,Math.max(1,parseInt(document.getElementById("f-work").value,10)||10));
     const br=Math.min(60,Math.max(1,parseInt(document.getElementById("f-brk").value,10)||5));
-    S.settings={work:w,brk:br};
+    S.settings=Object.assign({},S.settings,{work:w,brk:br,remind:document.getElementById("f-rem").checked,lead:parseInt(document.getElementById("f-lead").value,10)||60});
     S.tasks.forEach(t=>{ blockSeen[t.id]=Math.floor(elapsed(t)/W()); });
     if(S.brk){ S.brk.end=Math.min(S.brk.end,Date.now()+B()); }
     dlg.close(); commit(); };
