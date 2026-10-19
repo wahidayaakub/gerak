@@ -560,6 +560,9 @@ let fbAuth=null;
 function connectFirebase(){
   firebase.initializeApp(FBC);
   fbAuth=firebase.auth(); const rtdb=firebase.database();
+  let hiddenAt=0; document.addEventListener("visibilitychange",()=>{ if(document.hidden){ hiddenAt=Date.now(); return; }
+    if(Date.now()-hiddenAt>20000){ try{ rtdb.goOffline(); rtdb.goOnline(); setSync("busy","Refreshing…"); }catch(e){} } });
+  try{ rtdb.ref(".info/connected").on("value",sn=>{ if(sn.val()===true&&!dirty&&!writing&&ref) setSync("on","Synced"); }); }catch(e){}
   try{ rtdb.ref(".info/serverTimeOffset").on("value",sn=>{ const v=+sn.val(); if(isFinite(v)) clockOff=v; }); }catch(e){}
   fbAuth.getRedirectResult().catch(e=>gateError(e));
   fbAuth.onAuthStateChanged(u=>{
@@ -1331,24 +1334,27 @@ function openTask(t,focus){
     ${t.done?"":`<button type="button" class="ghost f-start" id="f-start">▶ ${t.runStart?"Open focus mode":"Start timer in focus mode"}</button>`}
     <div class="actions"><button type="button" class="danger" id="f-del">Delete task</button><button class="primary" id="f-save" value="save">Save</button></div>`;
   sheet.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{ document.getElementById(b.dataset.clear).value=""; });
-  armDelete(document.getElementById("f-del"),()=>{ S.tasks=S.tasks.filter(x=>x!==t); commit(); });
-  const fs=document.getElementById("f-start"); if(fs) fs.onclick=()=>{ dlg.close();
-    if(!t.runStart){ S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=nowMs(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); commit(); }
-    openFocus(t.id); };
+  armDelete(document.getElementById("f-del"),()=>{ S.tasks=S.tasks.filter(x=>x.id!==t.id); commitNow(); });
+  const fs=document.getElementById("f-start"); if(fs) fs.onclick=()=>{ dlg.close(); const t2=taskOf(t.id); if(!t2) return;
+    if(!t2.runStart){ S.brk=null; S.ask=null; S.tasks.forEach(x=>{ if(x!==t2) stopTimer(x); }); t2.runStart=nowMs(); blockSeen[t2.id]=Math.floor(elapsed(t2)/W()); commitNow(); }
+    openFocus(t2.id); };
+  // remember what the sheet showed, so only fields the person actually changes are saved
+  const orig={}; ["f-title","f-exec","f-due","f-est","f-act","f-rec","f-sec"].forEach(id=>orig[id]=document.getElementById(id).value); orig["f-urg"]=document.getElementById("f-urg").checked;
+  const val=id=>document.getElementById(id).value, changed=id=>val(id)!==orig[id];
   document.getElementById("f-save").onclick=ev=>{ ev.preventDefault();
-    const title=document.getElementById("f-title").value.trim(); if(title) t.title=title;
-    const ex=document.getElementById("f-exec").value;
-    if(ex!==t.exec){ t.exec=ex; t.auto=false; }
-    t.due=document.getElementById("f-due").value;
-    let ns=document.getElementById("f-sec").value;
+    const t2=taskOf(t.id); if(!t2){ dlg.close(); toast("This task was removed on another device."); return; }
+    if(changed("f-title")){ const title=val("f-title").trim(); if(title) t2.title=title; }
+    if(changed("f-exec")){ t2.exec=val("f-exec"); t2.auto=false; }
+    if(changed("f-due")) t2.due=val("f-due");
+    let ns=val("f-sec");
     if(isNewDest(ns)){ const made=makeCategory(ns,document.getElementById("f-newname").value); if(!made){ document.getElementById("f-newname").focus(); return; } ns=made; }
-    if(ns!==t.sectionId){ t.sectionId=ns; t.order=secTasks(ns).length; }
-    const p=parseInt(document.getElementById("f-est").value,10); t.estP=p>0?p:0; delete t.est;
-    const rc=document.getElementById("f-rec").value; if(rc!==(t.recur||"none")){ t.recur=rc; t.recurSpawned=false; }
-    t.urgent=document.getElementById("f-urg").checked;
-    const am=parseInt(document.getElementById("f-act").value,10);
-    if(!isNaN(am)&&am!==Math.round(elapsed(t)/60000)){ const run=!!t.runStart; t.spent=Math.max(0,am)*60000; t.runStart=run?nowMs():null; blockSeen[t.id]=Math.floor(t.spent/W()); }
-    delete t.sample; autoToday(); dlg.close(); commit(); };
+    if(changed("f-sec")&&ns!==t2.sectionId){ t2.sectionId=ns; t2.order=secTasks(ns).length; }
+    if(changed("f-est")){ const p=parseInt(val("f-est"),10); t2.estP=p>0?p:0; delete t2.est; }
+    if(changed("f-rec")){ t2.recur=val("f-rec"); t2.recurSpawned=false; }
+    if(document.getElementById("f-urg").checked!==orig["f-urg"]) t2.urgent=document.getElementById("f-urg").checked;
+    if(changed("f-act")){ const am=parseInt(val("f-act"),10);
+      if(!isNaN(am)){ const run=!!t2.runStart; t2.spent=Math.max(0,am)*60000; t2.runStart=run?nowMs():null; blockSeen[t2.id]=Math.floor(t2.spent/W()); } }
+    delete t2.sample; autoToday(); dlg.close(); commitNow(); };
   document.getElementById("f-sec").onchange=e=>{ const v=e.target.value, w=document.getElementById("f-newwrap");
     w.hidden=!isNewDest(v); document.getElementById("f-newlbl").textContent=v==="newtab"?"New tab name":"New section name";
     if(!w.hidden) document.getElementById("f-newname").focus(); };
