@@ -502,7 +502,7 @@ function takeMerged(body,sentLocal){
   // body = what is now saved; sentLocal = our state when we started saving
   const saved=JSON.parse(body), keepTab=S.activeTab;
   const next=dirty?mergeState(sentLocal,S,saved):saved;
-  next.activeTab=keepTab; base=saved; lastRemote=body;
+  next.activeTab=keepTab; base=JSON.parse(body); lastRemote=body;
   const changed=J(next)!==J(S); S=next; normalize(); saveLocal(); if(changed) render();
 }
 async function flush(){
