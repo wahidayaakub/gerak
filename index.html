@@ -409,6 +409,7 @@ dialog::backdrop{background:rgba(5,7,12,.6)}
 
 <script>
 (() => {
+let clockOff=0; const nowMs=()=>Date.now()+clockOff;
 const COLORS = ["#d9a441","#4fa3a5","#c96f7d","#8b7fd1","#6aa86f","#5b8fd6"];
 const uid = () => Math.random().toString(36).slice(2,10);
 const esc = s => String(s ?? "").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -455,8 +456,12 @@ function saveLocal(){ try{ localStorage.setItem(LS,JSON.stringify(S)) }catch(e){
 let ref=null, timer=null, writing=false, dirty=false, lastRemote="";
 const syncEl = document.getElementById("sync");
 function setSync(cls,text){ syncEl.className="sync "+cls; syncEl.querySelector("span").textContent=text; }
+function commitNow(){ commit(); clearTimeout(timer); timer=null; flush(); }
+document.addEventListener("visibilitychange",()=>{ if(document.hidden&&dirty){ clearTimeout(timer); timer=null; flush(); } });
+window.addEventListener("pagehide",()=>{ if(dirty){ clearTimeout(timer); timer=null; flush(); } });
+window.addEventListener("blur",()=>{ if(dirty){ clearTimeout(timer); timer=null; flush(); } });
 function commit(){ saveLocal(); render(); if(!ref){ setSync("","Saved on this device"); return; }
-  dirty=true; setSync("busy","Saving…"); clearTimeout(timer); timer=setTimeout(flush,700); }
+  dirty=true; setSync("busy","Saving…"); clearTimeout(timer); timer=setTimeout(()=>{ timer=null; flush(); },400); }
 /* 3-way merge: keep only what THIS device changed since it last synced,
    on top of whatever the other devices saved meanwhile. */
 let base=null;
@@ -555,6 +560,7 @@ let fbAuth=null;
 function connectFirebase(){
   firebase.initializeApp(FBC);
   fbAuth=firebase.auth(); const rtdb=firebase.database();
+  try{ rtdb.ref(".info/serverTimeOffset").on("value",sn=>{ const v=+sn.val(); if(isFinite(v)) clockOff=v; }); }catch(e){}
   fbAuth.getRedirectResult().catch(e=>gateError(e));
   fbAuth.onAuthStateChanged(u=>{
     if(unsub){ try{unsub();}catch(e){} unsub=null; } ref=null; ready=false; dirty=false; clearTimeout(timer); timer=null;
@@ -685,11 +691,11 @@ function fmt(v){
     d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
   return lbl+", "+time;
 }
-function dueClass(t){ if(!t.due||t.done) return ""; const ms=new Date(t.due)-Date.now(); return ms<0?"late":ms<48*36e5?"soon":""; }
-function execClass(t){ if(!t.exec||t.done) return ""; return new Date(t.exec)<=Date.now()?"started":""; }
+function dueClass(t){ if(!t.due||t.done) return ""; const ms=new Date(t.due)-nowMs(); return ms<0?"late":ms<48*36e5?"soon":""; }
+function execClass(t){ if(!t.exec||t.done) return ""; return new Date(t.exec)<=nowMs()?"started":""; }
 
 function autoToday(){
-  let changed=false; const now=Date.now();
+  let changed=false; const now=nowMs();
   for(const t of S.tasks){ if(t.exec&&!t.done&&!t.auto&&new Date(t.exec)<=now){ t.today=true; t.auto=true; changed=true; } }
   return changed;
 }
@@ -730,12 +736,12 @@ const B=()=>Math.max(1,+(S.settings?.brk)||5)*60000;
 const estP=t=>t.estP||0;
 const estMin=t=>estP(t)*W()/60000;
 const pomoTxt=p=>p>0?`${p} × ${W()/60000} min = ${fmtMin(p*W()/60000)}`:`1 pomodoro = ${W()/60000} min`;
-const elapsed=t=>(t.spent||0)+(t.runStart?Date.now()-t.runStart:0);
+const elapsed=t=>(t.spent||0)+(t.runStart?nowMs()-t.runStart:0);
 function fmtClock(ms){ const s=Math.floor(ms/1000), h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
   return h?`${h}:${pad(m)}:${pad(x)}`:`${pad(m)}:${pad(x)}`; }
 function fmtMin(min){ min=Math.round(min); const h=Math.floor(min/60), m=min%60; return h?(m?`${h}h ${m}m`:`${h}h`):`${m}m`; }
 function fmtTaken(ms){ const s=Math.round(ms/1000); if(s<60) return s+"s"; const m=Math.floor(s/60), x=s%60; return m<60&&x?`${m}m ${x}s`:fmtMin(s/60); }
-function stopTimer(t){ if(t.runStart){ t.spent=(t.spent||0)+Date.now()-t.runStart; t.runStart=null; } }
+function stopTimer(t){ if(t.runStart){ t.spent=(t.spent||0)+nowMs()-t.runStart; t.runStart=null; } }
 function timerChip(t){
   const ms=elapsed(t), over=estP(t)&&ms>estMin(t)*60000;
   const pomos=estP(t), doneP=Math.floor(ms/W());
@@ -744,7 +750,7 @@ function timerChip(t){
     exp:`<button class="exp ${estP(t)?"":"empty"}" data-act="edit" data-focus="est" aria-label="Set expected time"><span class="lbl">Exp</span>${estP(t)?fmtMin(estMin(t)):"Set"}${dots}</button>`,
     act:`<span class="timer ${t.runStart?"run":""} ${over?"over":""}">
     <button class="play" data-act="timer" ${t.done?"disabled":""} aria-label="${t.runStart?"Pause":"Start"} timer for ${esc(t.title)}"></button>
-    <button class="tval" data-act="edit" data-focus="act" aria-label="Edit actual time"><span data-tv="${t.id}">${fmtClock(ms)}</span></button>${S.brk&&S.brk.id===t.id?`<span class="brk-chip">Break <span data-bk>${fmtClock(Math.max(0,S.brk.end-Date.now()))}</span></span>`:""}${t.done?"":`<button class="fz" data-act="focus" aria-label="Open focus mode for ${esc(t.title)}" title="Focus mode"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>`}</span>`};
+    <button class="tval" data-act="edit" data-focus="act" aria-label="Edit actual time"><span data-tv="${t.id}">${fmtClock(ms)}</span></button>${S.brk&&S.brk.id===t.id?`<span class="brk-chip">Break <span data-bk>${fmtClock(Math.max(0,S.brk.end-nowMs()))}</span></span>`:""}${t.done?"":`<button class="fz" data-act="focus" aria-label="Open focus mode for ${esc(t.title)}" title="Focus mode"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>`}</span>`};
 }
 let audioCtx=null;
 function chime(){ try{ audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
@@ -761,7 +767,7 @@ function stepDate(d,r){ const x=new Date(d);
   return x; }
 function spawnNext(t){
   if(!t.recur||t.recur==="none"||t.recurSpawned) return null;
-  const now=Date.now();
+  const now=nowMs();
   let anchor=t.exec||t.due?new Date(t.exec||t.due):(()=>{ const d=new Date(); d.setHours(9,0,0,0); return d; })();
   let n=0, probe=new Date(anchor); do{ probe=stepDate(probe,t.recur); n++; }while(probe.getTime()<=now&&n<1000);
   const shift=v=>{ if(!v) return ""; let d=new Date(v); for(let i=0;i<n;i++) d=stepDate(d,t.recur); return localISO(d); };
@@ -773,7 +779,7 @@ function spawnNext(t){
 const remShown=new Set();
 function pendingReminders(){
   if(S.settings?.remind===false) return [];
-  const now=Date.now(), lead=(S.settings?.lead||60)*60000, out=[]; let ch=false;
+  const now=nowMs(), lead=(S.settings?.lead||60)*60000, out=[]; let ch=false;
   for(const t of S.tasks){
     if(t.done) continue;
     if(t.snoozeUntil&&t.snoozeUntil>now) continue;
@@ -793,7 +799,7 @@ function renderRemind(){
   const r=list[0], t=r.t, key=r.kind+t.id+(r.kind==="start"?t.exec:t.due);
   if(!remShown.has(key)){ remShown.add(key); chime();
     notifyBg(r.kind==="start"?"Time to start":"Deadline coming up",t.title,true); }
-  const s=secOf(t.sectionId), tab=s&&tabOf(s.tabId), late=r.kind==="due"&&new Date(t.due)<Date.now();
+  const s=secOf(t.sectionId), tab=s&&tabOf(s.tabId), late=r.kind==="due"&&new Date(t.due)<nowMs();
   el.innerHTML=`<div class="rm-card ${r.kind}">
     <div class="rm-kind">${r.kind==="start"?"Time to start":late?"Deadline passed":"Deadline coming up"}</div>
     <div class="rm-title">${esc(t.title)}</div>
@@ -810,9 +816,9 @@ document.getElementById("remind")?.addEventListener("click",e=>{
   const t=taskOf(b.dataset.id); if(!t) return; const a=b.dataset.ract;
   const list=pendingReminders(), r=list.find(x=>x.t===t)||{kind:b.dataset.kind||"start"};
   const mark=()=>{ if(r.kind==="start") t.remExec=t.exec; else t.remDue=t.due; };
-  if(a==="snooze"){ t.snoozeUntil=Date.now()+5*60000; }
+  if(a==="snooze"){ t.snoozeUntil=nowMs()+5*60000; }
   else if(a==="ok"){ mark(); }
-  else if(a==="start"){ mark(); S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); if(!t.runStart){ t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); } t.today=true; commit(); openFocus(t.id); renderRemind(); return; }
+  else if(a==="start"){ mark(); S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); if(!t.runStart){ t.runStart=nowMs(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); } t.today=true; commit(); openFocus(t.id); renderRemind(); return; }
   else if(a==="open"){ mark(); commit(); renderRemind(); openTask(t,"due"); return; }
   commit(); renderRemind();
 });
@@ -860,7 +866,7 @@ const IS_ANDROID=/Android/i.test(UA);
 const IS_IOS=/iPhone|iPad|iPod/i.test(UA)||(/Macintosh/.test(UA)&&navigator.maxTouchPoints>1);
 const PHONE=IS_ANDROID||IS_IOS;
 function phoneLeft(t){
-  if(S.brk&&S.brk.id===t.id) return {sec:Math.max(1,Math.ceil((S.brk.end-Date.now())/1000)),kind:"Break"};
+  if(S.brk&&S.brk.id===t.id) return {sec:Math.max(1,Math.ceil((S.brk.end-nowMs())/1000)),kind:"Break"};
   if(t.runStart){ const ms=elapsed(t); return {sec:Math.max(1,Math.ceil((W()-ms%W())/1000)),kind:"Pomodoro"}; }
   return null;
 }
@@ -904,7 +910,7 @@ function renderNow(){
   el.innerHTML=`<div class="nb-in">
     <span class="nb-dot ${onB?"brk":""}" aria-hidden="true"></span>
     <div class="nb-txt"><div class="nb-kind">${onB?"On a break":"Working on"}</div><div class="nb-title">${esc(t.title)}</div></div>
-    <div class="nb-clock">${onB?`<span data-bk>${fmtClock(Math.max(0,S.brk.end-Date.now()))}</span>`:`<span data-tv="${t.id}">${fmtClock(elapsed(t))}</span>`}</div>
+    <div class="nb-clock">${onB?`<span data-bk>${fmtClock(Math.max(0,S.brk.end-nowMs()))}</span>`:`<span data-tv="${t.id}">${fmtClock(elapsed(t))}</span>`}</div>
     ${phoneTimerBtn(t,"ghost nb-pt")}<button class="primary nb-btn" data-nact="${t.id}">Back to focus</button></div>`;
   el.hidden=false; document.body.classList.add("has-nowbar");
 }
@@ -920,11 +926,11 @@ document.addEventListener("click",e=>{
   const b=e.target.closest("[data-pact]"); if(!b||!S.ask) return;
   const t=taskOf(S.ask.id), a=b.dataset.pact; S.ask=null;
   if(t){
-    if(a==="break"){ stopTimer(t); S.brk={id:t.id,end:Date.now()+B()}; }
-    else if(a==="more"){ stopTimer(t); S.brk={id:t.id,end:Date.now()+B()}; }
-    else if(a==="start"){ S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); if(!t.runStart){ t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); } }
+    if(a==="break"){ stopTimer(t); S.brk={id:t.id,end:nowMs()+B()}; }
+    else if(a==="more"){ stopTimer(t); S.brk={id:t.id,end:nowMs()+B()}; }
+    else if(a==="start"){ S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); if(!t.runStart){ t.runStart=nowMs(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); } }
   }
-  commit();
+  commitNow();
 });
 const blockSeen={};
 setInterval(()=>{
@@ -936,12 +942,12 @@ setInterval(()=>{
     document.querySelectorAll(`[data-pb="${t.id}"]`).forEach(el=>el.style.width=((ms%W())/W()*100).toFixed(2)+"%");
     const b=Math.floor(ms/W());
     if(blockSeen[t.id]===undefined) blockSeen[t.id]=b;
-    else if(b>blockSeen[t.id]){ blockSeen[t.id]=b; S.ask={id:t.id,kind:"break",n:b,at:Date.now()};
+    else if(b>blockSeen[t.id]){ blockSeen[t.id]=b; S.ask={id:t.id,kind:"break",n:b,at:nowMs()};
       chime(); setTimeout(chime,600); notifyBg(`Pomodoro ${b} done. Break or keep working?`,t.title,true); flashTitle(true,"⏰ Break or keep working?"); commit(); }
   }
-  if(S.brk){ const left=S.brk.end-Date.now();
+  if(S.brk){ const left=S.brk.end-nowMs();
     if(left<=0){ const tt=taskOf(S.brk.id); S.brk=null; chime(); setTimeout(chime,700);
-      if(tt&&!tt.done){ S.ask={id:tt.id,kind:"resume",n:Math.floor(elapsed(tt)/W())+1,at:Date.now()}; notifyBg(`Break over. Ready for pomodoro ${S.ask.n}?`,tt.title,true); flashTitle(true,"⏰ Break over"); }
+      if(tt&&!tt.done){ S.ask={id:tt.id,kind:"resume",n:Math.floor(elapsed(tt)/W())+1,at:nowMs()}; notifyBg(`Break over. Ready for pomodoro ${S.ask.n}?`,tt.title,true); flashTitle(true,"⏰ Break over"); }
       commit(); }
     else { document.querySelectorAll("[data-bk]").forEach(el=>el.textContent=fmtClock(left));
       document.querySelectorAll("[data-bb]").forEach(el=>el.style.width=((B()-left)/B()*100).toFixed(2)+"%"); } }
@@ -973,10 +979,10 @@ function renderFocus(){
       <h2 class="f-title">${esc(t.title)}</h2>
       ${S.ask&&S.ask.id===t.id?askBox(t,true):""}
       ${onBreak?`<div class="f-mode brk">Break · ${B()/60000} min</div>
-      <div class="f-clock brk"><span data-bk>${fmtClock(Math.max(0,S.brk.end-Date.now()))}</span></div>
+      <div class="f-clock brk"><span data-bk>${fmtClock(Math.max(0,S.brk.end-nowMs()))}</span></div>
       <div class="f-sub">Stand up, stretch, drink water. Work time so far: ${fmtClock(ms)}</div>
       <div class="f-pomo"><div class="f-dots" aria-hidden="true">${dots}</div>
-        <div class="f-bar brk"><span data-bb style="width:${((B()-(S.brk.end-Date.now()))/B()*100).toFixed(2)}%"></span></div>
+        <div class="f-bar brk"><span data-bb style="width:${((B()-(S.brk.end-nowMs()))/B()*100).toFixed(2)}%"></span></div>
         <div class="f-left">Next: pomodoro ${doneP+1}</div></div>`
       :`<div class="f-mode">${t.runStart?`Pomodoro ${doneP+1} · ${W()/60000} min`:"Paused"}</div>
       <div class="f-clock ${t.runStart?"run":""} ${estP(t)&&ms>estMin(t)*60000?"over":""}"><span data-tv="${t.id}">${fmtClock(ms)}</span></div>
@@ -1098,7 +1104,7 @@ function renderDone(){
     const k=dayKey(t.doneAt);
     if(k!==cur){ if(cur) h+=`</ul>`; cur=k;
       const d=new Date(t.doneAt), n=list.filter(x=>dayKey(x.doneAt)===k).length;
-      const lbl=k===dayKey(new Date())?"Today":k===dayKey(Date.now()-864e5)?"Yesterday":d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+      const lbl=k===dayKey(new Date())?"Today":k===dayKey(nowMs()-864e5)?"Yesterday":d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
       h+=`<div class="day-head"><span>${lbl}</span><span>${n} done</span></div><ul class="list done-list">`; }
     const s=secOf(t.sectionId), tab=tabOf(s.tabId), dt=new Date(t.doneAt);
     const time=(dt.getHours()%12||12)+(dt.getMinutes()?":"+pad(dt.getMinutes()):"")+(dt.getHours()<12?"am":"pm");
@@ -1122,7 +1128,7 @@ function renderUpcoming(){
     if(UF.range==="custom") return (!UF.from||k>=UF.from)&&(!UF.to||k<=UF.to); return true; };
   const pool=S.tasks.filter(t=>{ if(t.done||!keyOf(t)) return false; const s=secOf(t.sectionId); if(!s) return false;
     if(UF.tab!=="all"&&s.tabId!==UF.tab) return false; if(UF.sec!=="all"&&s.id!==UF.sec) return false; return true; });
-  const overdue=pool.filter(t=>byDue?new Date(t.due)<Date.now():dayKey(t.exec)<today).sort((a,b)=>new Date(keyOf(a))-new Date(keyOf(b)));
+  const overdue=pool.filter(t=>byDue?new Date(t.due)<nowMs():dayKey(t.exec)<today).sort((a,b)=>new Date(keyOf(a))-new Date(keyOf(b)));
   const list=pool.filter(t=>!overdue.includes(t)&&dayKey(keyOf(t))>=today&&inR(dayKey(keyOf(t))))
     .sort((a,b)=>new Date(keyOf(a))-new Date(keyOf(b))||(b.urgent?1:0)-(a.urgent?1:0));
   let h=`<div class="panel-head"><div><h2>Upcoming</h2><div class="sub">${list.length} planned${overdue.length?` · ${overdue.length} ${byDue?"overdue":"start date passed"}`:""}</div></div></div>
@@ -1248,14 +1254,14 @@ document.addEventListener("click",e=>{
     case "addTab": addingTab=true; render(); break;
     case "toggleAll": { const secs=S.sections.filter(x=>x.tabId===b.dataset.id); const anyOpen=secs.some(x=>!x.collapsed); secs.forEach(x=>x.collapsed=anyOpen); commit(); break; }
     case "collapse": { const s=secOf(b.dataset.id); s.collapsed=!s.collapsed; commit(); break; }
-    case "done": if(t.done){ t.done=false; t.doneAt=null; } else completeTask(t); commit(); break;
+    case "done": if(t.done){ t.done=false; t.doneAt=null; } else completeTask(t); commitNow(); break;
     case "urgent": t.urgent=!t.urgent; commit(); break;
     case "timer": {
       askNotifPermission();
       if(S.ask&&S.ask.id===t.id) S.ask=null;
       if(t.runStart) stopTimer(t);
-      else { S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); chime.prime||(chime.prime=1, (()=>{ try{ audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)(); audioCtx.resume(); }catch(e){} })()); }
-      commit(); if(t.runStart) openFocus(t.id); break; }
+      else { S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=nowMs(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); chime.prime||(chime.prime=1, (()=>{ try{ audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)(); audioCtx.resume(); }catch(e){} })()); }
+      commitNow(); if(t.runStart) openFocus(t.id); break; }
     case "focus": openFocus(t.id); break;
     case "settings": openSettings(); break;
     case "import": openImport(); break;
@@ -1264,7 +1270,7 @@ document.addEventListener("click",e=>{
     case "signout": if(b.classList.contains("armed")){ fbAuth&&fbAuth.signOut(); } else { b.classList.add("armed"); b.textContent="Tap again to sign out"; setTimeout(()=>{ if(b.isConnected) render(); },3000); } break;
     case "theme": S.settings.theme=curTheme()==="dark"?"light":"dark"; commit(); break;
     case "fexit": closeFocus(); break;
-    case "fdone": completeTask(t); closeFocus(); commit(); break;
+    case "fdone": completeTask(t); closeFocus(); commitNow(); break;
     case "today": t.today=!t.today; if(t.today) t.auto=true; delete t.todayOrder; commit(); break;
     case "edit": openTask(t,b.dataset.focus); break;
     case "secMenu": openSection(secOf(b.dataset.id)); break;
@@ -1327,7 +1333,7 @@ function openTask(t,focus){
   sheet.querySelectorAll("[data-clear]").forEach(b=>b.onclick=()=>{ document.getElementById(b.dataset.clear).value=""; });
   armDelete(document.getElementById("f-del"),()=>{ S.tasks=S.tasks.filter(x=>x!==t); commit(); });
   const fs=document.getElementById("f-start"); if(fs) fs.onclick=()=>{ dlg.close();
-    if(!t.runStart){ S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); commit(); }
+    if(!t.runStart){ S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=nowMs(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); commit(); }
     openFocus(t.id); };
   document.getElementById("f-save").onclick=ev=>{ ev.preventDefault();
     const title=document.getElementById("f-title").value.trim(); if(title) t.title=title;
@@ -1341,7 +1347,7 @@ function openTask(t,focus){
     const rc=document.getElementById("f-rec").value; if(rc!==(t.recur||"none")){ t.recur=rc; t.recurSpawned=false; }
     t.urgent=document.getElementById("f-urg").checked;
     const am=parseInt(document.getElementById("f-act").value,10);
-    if(!isNaN(am)&&am!==Math.round(elapsed(t)/60000)){ const run=!!t.runStart; t.spent=Math.max(0,am)*60000; t.runStart=run?Date.now():null; blockSeen[t.id]=Math.floor(t.spent/W()); }
+    if(!isNaN(am)&&am!==Math.round(elapsed(t)/60000)){ const run=!!t.runStart; t.spent=Math.max(0,am)*60000; t.runStart=run?nowMs():null; blockSeen[t.id]=Math.floor(t.spent/W()); }
     delete t.sample; autoToday(); dlg.close(); commit(); };
   document.getElementById("f-sec").onchange=e=>{ const v=e.target.value, w=document.getElementById("f-newwrap");
     w.hidden=!isNewDest(v); document.getElementById("f-newlbl").textContent=v==="newtab"?"New tab name":"New section name";
@@ -1399,7 +1405,7 @@ function openSettings(){
     const br=Math.min(60,Math.max(1,parseInt(document.getElementById("f-brk").value,10)||5));
     S.settings=Object.assign({},S.settings,{work:w,brk:br,remind:document.getElementById("f-rem").checked,lead:parseInt(document.getElementById("f-lead").value,10)||60});
     S.tasks.forEach(t=>{ blockSeen[t.id]=Math.floor(elapsed(t)/W()); });
-    if(S.brk){ S.brk.end=Math.min(S.brk.end,Date.now()+B()); }
+    if(S.brk){ S.brk.end=Math.min(S.brk.end,nowMs()+B()); }
     dlg.close(); commit(); };
   dlg.showModal(); setTimeout(()=>document.getElementById("f-work").focus(),30);
 }
