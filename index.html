@@ -310,6 +310,10 @@ body.dragging .tab[data-drop],body.dragging .sec-head[data-drop]{outline:1.5px d
 .nb-clock{font-family:var(--display);font-weight:800;font-size:1.25rem;font-variant-numeric:tabular-nums;color:var(--sun)}
 .nb-dot.brk~.nb-clock{color:var(--ok)}
 .nb-btn{flex:none;padding:9px 14px}
+.nb-pt{flex:none;padding:8px 10px;font-size:.8rem}
+.f-ptimer{background:none;border:1px dashed var(--line);color:var(--muted)}
+.steps{margin:0;padding-left:20px;display:grid;gap:8px;line-height:1.45}
+@media (max-width:480px){.nb-in{flex-wrap:wrap}.nb-txt{flex-basis:calc(100% - 140px)}}
 body.has-nowbar{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 body.has-nowbar .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 @media (max-width:420px){.nb-btn{padding:9px 10px;font-size:.85rem}.nb-clock{font-size:1.05rem}}
@@ -733,7 +737,7 @@ function renderRemind(){
   if(!list.length){ el.hidden=true; return; }
   const r=list[0], t=r.t, key=r.kind+t.id+(r.kind==="start"?t.exec:t.due);
   if(!remShown.has(key)){ remShown.add(key); chime();
-    try{ if(document.hidden&&"Notification" in window&&Notification.permission==="granted") new Notification(r.kind==="start"?"Time to start":"Deadline coming up",{body:t.title}); }catch(e){} }
+    notifyBg(r.kind==="start"?"Time to start":"Deadline coming up",t.title,true); }
   const s=secOf(t.sectionId), tab=s&&tabOf(s.tabId), late=r.kind==="due"&&new Date(t.due)<Date.now();
   el.innerHTML=`<div class="rm-card ${r.kind}">
     <div class="rm-kind">${r.kind==="start"?"Time to start":late?"Deadline passed":"Deadline coming up"}</div>
@@ -767,7 +771,21 @@ function completeTask(t){
   toast(nt?`Done. Next "${t.title}": ${fmt(nt.exec||nt.due)}.`:`Done: "${t.title}"`);
 }
 const viewSort=arr=>arr.slice().sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||a.order-b.order);
-function notifyBg(title,body){ try{ if(document.hidden&&"Notification" in window&&Notification.permission==="granted") new Notification(title,{body}); }catch(e){} }
+function away(){ return document.hidden||!document.hasFocus(); }
+function notifyBg(title,body,sticky){
+  try{ if(away()&&"Notification" in window&&Notification.permission==="granted"){
+    const n=new Notification(title,{body,tag:"gerak-"+(sticky?"pomo":"rem"),renotify:true,requireInteraction:!!sticky,silent:false});
+    n.onclick=()=>{ try{ window.focus(); }catch(e){} n.close(); }; } }catch(e){}
+}
+function askNotifPermission(){ try{ if("Notification" in window&&Notification.permission==="default") Notification.requestPermission().catch(()=>{}); }catch(e){} }
+/* Flash the browser tab title while a pomodoro question is waiting */
+let flashT=null; const baseTitle=document.title;
+function flashTitle(on,msg){
+  clearInterval(flashT); flashT=null; document.title=baseTitle;
+  if(!on) return; let i=0;
+  flashT=setInterval(()=>{ if(!away()||!S.ask){ clearInterval(flashT); flashT=null; document.title=baseTitle; return; } document.title=(i++%2)?baseTitle:msg; },1000);
+}
+window.addEventListener("focus",()=>flashTitle(false));
 function askBox(t,inFocus){
   const a=S.ask;
   if(a.kind==="break") return `<div class="ask ${inFocus?"in-focus":"rm-card"}">
@@ -781,6 +799,47 @@ function askBox(t,inFocus){
       <div class="rm-sub">Ready for pomodoro ${a.n}?</div>
       <div class="rm-actions"><button class="primary" data-pact="start">Start pomodoro ${a.n}</button><button class="ghost" data-pact="more">Break ${B()/60000} more min</button></div></div>`;
 }
+/* ---------- phone timer hand-off ---------- */
+const UA=navigator.userAgent||"";
+const IS_ANDROID=/Android/i.test(UA);
+const IS_IOS=/iPhone|iPad|iPod/i.test(UA)||(/Macintosh/.test(UA)&&navigator.maxTouchPoints>1);
+const PHONE=IS_ANDROID||IS_IOS;
+function phoneLeft(t){
+  if(S.brk&&S.brk.id===t.id) return {sec:Math.max(1,Math.ceil((S.brk.end-Date.now())/1000)),kind:"Break"};
+  if(t.runStart){ const ms=elapsed(t); return {sec:Math.max(1,Math.ceil((W()-ms%W())/1000)),kind:"Pomodoro"}; }
+  return null;
+}
+function phoneTimerBtn(t,cls){
+  if(!PHONE) return "";
+  const l=phoneLeft(t); if(!l) return "";
+  return `<button class="${cls}" data-ptimer="${t.id}">Set phone timer (${Math.ceil(l.sec/60)} min)</button>`;
+}
+function runPhoneTimer(t){
+  const l=phoneLeft(t); if(!l) return;
+  const msg=`Gérak: ${l.kind} done`;
+  if(IS_ANDROID){
+    location.href=`intent:#Intent;action=android.intent.action.SET_TIMER;i.android.intent.extra.alarm.LENGTH=${l.sec};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(msg)};B.android.intent.extra.alarm.SKIP_UI=true;end`;
+    toast("Opening your Clock app. If nothing happens, your phone does not allow this.");
+  } else if(IS_IOS){
+    if(!S.settings?.iosShortcut){ openShortcutHelp(t); return; }
+    location.href=`shortcuts://run-shortcut?name=${encodeURIComponent("Gerak Timer")}&input=text&text=${Math.ceil(l.sec/60)}`;
+  }
+}
+function openShortcutHelp(t){
+  sheet.innerHTML=`<h3>Set up the phone timer (once)</h3>
+    <p class="hint" style="margin:0">iPhone needs a small Shortcut so Gérak can start your Clock timer.</p>
+    <ol class="steps">
+      <li>Open the <b>Shortcuts</b> app and tap <b>+</b>.</li>
+      <li>Search for and add the action <b>Start Timer</b>.</li>
+      <li>Tap the time in that action and choose <b>Shortcut Input</b>. Set the unit to <b>minutes</b>.</li>
+      <li>Name the shortcut exactly <b>Gerak Timer</b> and tap Done.</li>
+    </ol>
+    <div class="actions"><button type="button" class="ghost" id="f-sc-no">Later</button><button class="primary" id="f-sc-ok">Done, start timer</button></div>`;
+  document.getElementById("f-sc-no").onclick=()=>dlg.close();
+  document.getElementById("f-sc-ok").onclick=ev=>{ ev.preventDefault(); S.settings.iosShortcut=true; dlg.close(); commit(); runPhoneTimer(t); };
+  dlg.showModal();
+}
+document.addEventListener("click",e=>{ const b=e.target.closest("[data-ptimer]"); if(!b) return; const t=taskOf(b.dataset.ptimer); if(t) runPhoneTimer(t); });
 function renderNow(){
   const el=document.getElementById("nowBar"); if(!el||!S) return;
   const run=S.tasks.find(t=>t.runStart&&!t.done), brk=S.brk&&taskOf(S.brk.id);
@@ -791,7 +850,7 @@ function renderNow(){
     <span class="nb-dot ${onB?"brk":""}" aria-hidden="true"></span>
     <div class="nb-txt"><div class="nb-kind">${onB?"On a break":"Working on"}</div><div class="nb-title">${esc(t.title)}</div></div>
     <div class="nb-clock">${onB?`<span data-bk>${fmtClock(Math.max(0,S.brk.end-Date.now()))}</span>`:`<span data-tv="${t.id}">${fmtClock(elapsed(t))}</span>`}</div>
-    <button class="primary nb-btn" data-nact="${t.id}">Back to focus</button></div>`;
+    ${phoneTimerBtn(t,"ghost nb-pt")}<button class="primary nb-btn" data-nact="${t.id}">Back to focus</button></div>`;
   el.hidden=false; document.body.classList.add("has-nowbar");
 }
 document.addEventListener("click",e=>{ const b=e.target.closest("[data-nact]"); if(b) openFocus(b.dataset.nact); });
@@ -823,11 +882,11 @@ setInterval(()=>{
     const b=Math.floor(ms/W());
     if(blockSeen[t.id]===undefined) blockSeen[t.id]=b;
     else if(b>blockSeen[t.id]){ blockSeen[t.id]=b; S.ask={id:t.id,kind:"break",n:b,at:Date.now()};
-      chime(); setTimeout(chime,600); notifyBg(`Pomodoro ${b} done`,`${t.title}: take a break or keep working?`); commit(); }
+      chime(); setTimeout(chime,600); notifyBg(`Pomodoro ${b} done. Break or keep working?`,t.title,true); flashTitle(true,"⏰ Break or keep working?"); commit(); }
   }
   if(S.brk){ const left=S.brk.end-Date.now();
     if(left<=0){ const tt=taskOf(S.brk.id); S.brk=null; chime(); setTimeout(chime,700);
-      if(tt&&!tt.done){ S.ask={id:tt.id,kind:"resume",n:Math.floor(elapsed(tt)/W())+1,at:Date.now()}; notifyBg("Break over",`Ready for pomodoro ${S.ask.n} on ${tt.title}?`); }
+      if(tt&&!tt.done){ S.ask={id:tt.id,kind:"resume",n:Math.floor(elapsed(tt)/W())+1,at:Date.now()}; notifyBg(`Break over. Ready for pomodoro ${S.ask.n}?`,tt.title,true); flashTitle(true,"⏰ Break over"); }
       commit(); }
     else { document.querySelectorAll("[data-bk]").forEach(el=>el.textContent=fmtClock(left));
       document.querySelectorAll("[data-bb]").forEach(el=>el.style.width=((B()-left)/B()*100).toFixed(2)+"%"); } }
@@ -874,6 +933,7 @@ function renderFocus(){
     <div class="f-actions">
       <button class="f-btn ${t.runStart?"":"primary"}" data-act="timer">${onBreak?"Skip break":t.runStart?"Pause":ms>0&&ms%W()<3000?`Start pomodoro ${doneP+1}`:"Resume"}</button>
       <button class="f-btn primary" data-act="fdone">Mark done</button>
+      ${phoneTimerBtn(t,"f-btn f-ptimer")}
     </div>`;
   el.hidden=false; document.body.classList.add("focusing");
 }
@@ -1136,6 +1196,7 @@ document.addEventListener("click",e=>{
     case "done": if(t.done){ t.done=false; t.doneAt=null; } else completeTask(t); commit(); break;
     case "urgent": t.urgent=!t.urgent; commit(); break;
     case "timer": {
+      askNotifPermission();
       if(S.ask&&S.ask.id===t.id) S.ask=null;
       if(t.runStart) stopTimer(t);
       else { S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); chime.prime||(chime.prime=1, (()=>{ try{ audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)(); audioCtx.resume(); }catch(e){} })()); }
