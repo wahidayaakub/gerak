@@ -298,6 +298,27 @@ body.dragging .tab[data-drop],body.dragging .sec-head[data-drop]{outline:1.5px d
 .rm-sub{color:var(--muted);font-size:.9rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .rm-sub .dot{width:8px;height:8px;border-radius:50%}
 .rm-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.ask-wrap{z-index:36}
+.nowbar{position:fixed;left:0;right:0;bottom:0;z-index:25;padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -6px 20px rgba(0,0,0,.25)}
+.nb-in{max-width:980px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.nb-dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--sun);animation:nbPulse 1.6s ease-in-out infinite}
+.nb-dot.brk{background:var(--ok)}
+@keyframes nbPulse{50%{opacity:.35}}
+.nb-txt{flex:1;min-width:0}
+.nb-kind{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.nb-title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nb-clock{font-family:var(--display);font-weight:800;font-size:1.25rem;font-variant-numeric:tabular-nums;color:var(--sun)}
+.nb-dot.brk~.nb-clock{color:var(--ok)}
+.nb-btn{flex:none;padding:9px 14px}
+body.has-nowbar{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+body.has-nowbar .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+@media (max-width:420px){.nb-btn{padding:9px 10px;font-size:.85rem}.nb-clock{font-size:1.05rem}}
+.rm-card.ask{border-top-color:var(--ok)}
+.rm-card.ask .rm-kind{color:var(--ok)}
+.ask.in-focus{display:grid;gap:8px;justify-items:center;text-align:center;padding:16px 20px;border:1px solid var(--ok);border-radius:14px;background:var(--surface);max-width:460px}
+.ask.in-focus .rm-kind{color:var(--ok)}
+.ask.in-focus .rm-actions{justify-content:center}
+.ask .rm-sub b{color:var(--fg);font-variant-numeric:tabular-nums}
 .rm-more{font-size:.8rem;color:var(--faint)}
 .t-crumb{display:flex;align-items:center;gap:6px;font-size:.74rem;color:var(--muted);margin-bottom:2px}
 .t-crumb .dot{width:7px;height:7px;border-radius:50%}
@@ -345,7 +366,7 @@ dialog::backdrop{background:rgba(5,7,12,.6)}
   .cols,.row{grid-template-columns:18px 26px minmax(0,1fr) 54px!important}
 }
 .f-start{justify-self:start}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){.nb-dot{animation:none}*{transition:none!important}}
 </style>
 </head>
 <body>
@@ -376,6 +397,8 @@ dialog::backdrop{background:rgba(5,7,12,.6)}
   </div>
 </div>
 <div class="focus" id="focus" role="dialog" aria-modal="true" aria-label="Focus mode" hidden></div>
+<div class="nowbar" id="nowBar" hidden></div>
+<div class="remind ask-wrap" id="pomoAsk" role="alertdialog" aria-live="assertive" hidden></div>
 <div class="remind" id="remind" role="alertdialog" aria-live="assertive" hidden></div>
 <div class="toast" id="toast" role="status" hidden></div>
 <dialog id="dlg"><form method="dialog" class="sheet" id="sheet"></form></dialog>
@@ -633,6 +656,8 @@ function render(){
   bindSortables();
   renderFocus();
   renderRemind();
+  renderAsk();
+  renderNow();
   applyTheme();
   renderOldBanner();
   { const a=document.getElementById("acct"); a.hidden=!(FB_ON&&me); a.classList.remove("armed");
@@ -734,6 +759,7 @@ document.getElementById("remind")?.addEventListener("click",e=>{
 });
 setInterval(renderRemind,15000);
 function completeTask(t){
+  if(S.ask&&S.ask.id===t.id) S.ask=null;
   delete t.todayOrder;
   if(S.brk&&S.brk.id===t.id) S.brk=null; stopTimer(t);
   t.done=true; t.doneAt=new Date().toISOString();
@@ -741,6 +767,51 @@ function completeTask(t){
   toast(nt?`Done. Next "${t.title}": ${fmt(nt.exec||nt.due)}.`:`Done: "${t.title}"`);
 }
 const viewSort=arr=>arr.slice().sort((a,b)=>(b.urgent?1:0)-(a.urgent?1:0)||a.order-b.order);
+function notifyBg(title,body){ try{ if(document.hidden&&"Notification" in window&&Notification.permission==="granted") new Notification(title,{body}); }catch(e){} }
+function askBox(t,inFocus){
+  const a=S.ask;
+  if(a.kind==="break") return `<div class="ask ${inFocus?"in-focus":"rm-card"}">
+      <div class="rm-kind">Pomodoro ${a.n} done</div>
+      ${inFocus?"":`<div class="rm-title">${esc(t.title)}</div>`}
+      <div class="rm-sub">Time for a ${B()/60000}-minute break. The timer keeps counting until you choose: <b data-tv="${t.id}">${fmtClock(elapsed(t))}</b></div>
+      <div class="rm-actions"><button class="primary" data-pact="break">Take a break</button><button class="ghost" data-pact="cont">Keep working</button></div></div>`;
+  return `<div class="ask ${inFocus?"in-focus":"rm-card"}">
+      <div class="rm-kind">Break over</div>
+      ${inFocus?"":`<div class="rm-title">${esc(t.title)}</div>`}
+      <div class="rm-sub">Ready for pomodoro ${a.n}?</div>
+      <div class="rm-actions"><button class="primary" data-pact="start">Start pomodoro ${a.n}</button><button class="ghost" data-pact="more">Break ${B()/60000} more min</button></div></div>`;
+}
+function renderNow(){
+  const el=document.getElementById("nowBar"); if(!el||!S) return;
+  const run=S.tasks.find(t=>t.runStart&&!t.done), brk=S.brk&&taskOf(S.brk.id);
+  const t=run||brk;
+  if(!t||focusId||(FB_ON&&!me)){ el.hidden=true; document.body.classList.remove("has-nowbar"); return; }
+  const onB=!run;
+  el.innerHTML=`<div class="nb-in">
+    <span class="nb-dot ${onB?"brk":""}" aria-hidden="true"></span>
+    <div class="nb-txt"><div class="nb-kind">${onB?"On a break":"Working on"}</div><div class="nb-title">${esc(t.title)}</div></div>
+    <div class="nb-clock">${onB?`<span data-bk>${fmtClock(Math.max(0,S.brk.end-Date.now()))}</span>`:`<span data-tv="${t.id}">${fmtClock(elapsed(t))}</span>`}</div>
+    <button class="primary nb-btn" data-nact="${t.id}">Back to focus</button></div>`;
+  el.hidden=false; document.body.classList.add("has-nowbar");
+}
+document.addEventListener("click",e=>{ const b=e.target.closest("[data-nact]"); if(b) openFocus(b.dataset.nact); });
+function renderAsk(){
+  const el=document.getElementById("pomoAsk"); if(!el||!S) return;
+  const a=S.ask, t=a&&taskOf(a.id);
+  if(a&&(!t||t.done)){ S.ask=null; }
+  if(!S.ask||focusId===S.ask.id||(FB_ON&&!me)){ el.hidden=true; return; }
+  el.innerHTML=askBox(t,false); el.hidden=false;
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-pact]"); if(!b||!S.ask) return;
+  const t=taskOf(S.ask.id), a=b.dataset.pact; S.ask=null;
+  if(t){
+    if(a==="break"){ stopTimer(t); S.brk={id:t.id,end:Date.now()+B()}; }
+    else if(a==="more"){ stopTimer(t); S.brk={id:t.id,end:Date.now()+B()}; }
+    else if(a==="start"){ S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); if(!t.runStart){ t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); } }
+  }
+  commit();
+});
 const blockSeen={};
 setInterval(()=>{
   for(const t of S.tasks){ if(!t.runStart) continue;
@@ -751,12 +822,13 @@ setInterval(()=>{
     document.querySelectorAll(`[data-pb="${t.id}"]`).forEach(el=>el.style.width=((ms%W())/W()*100).toFixed(2)+"%");
     const b=Math.floor(ms/W());
     if(blockSeen[t.id]===undefined) blockSeen[t.id]=b;
-    else if(b>blockSeen[t.id]){ blockSeen[t.id]=b; stopTimer(t); S.brk={id:t.id,end:Date.now()+B()};
-      chime(); toast(`Pomodoro ${b} done. Break for ${B()/60000} min.`); commit(); }
+    else if(b>blockSeen[t.id]){ blockSeen[t.id]=b; S.ask={id:t.id,kind:"break",n:b,at:Date.now()};
+      chime(); setTimeout(chime,600); notifyBg(`Pomodoro ${b} done`,`${t.title}: take a break or keep working?`); commit(); }
   }
   if(S.brk){ const left=S.brk.end-Date.now();
     if(left<=0){ const tt=taskOf(S.brk.id); S.brk=null; chime(); setTimeout(chime,700);
-      toast(tt&&!tt.done?`Break over. Ready for pomodoro ${Math.floor(elapsed(tt)/W())+1} on "${tt.title}"?`:"Break over."); commit(); }
+      if(tt&&!tt.done){ S.ask={id:tt.id,kind:"resume",n:Math.floor(elapsed(tt)/W())+1,at:Date.now()}; notifyBg("Break over",`Ready for pomodoro ${S.ask.n} on ${tt.title}?`); }
+      commit(); }
     else { document.querySelectorAll("[data-bk]").forEach(el=>el.textContent=fmtClock(left));
       document.querySelectorAll("[data-bb]").forEach(el=>el.style.width=((B()-left)/B()*100).toFixed(2)+"%"); } }
 },1000);
@@ -766,12 +838,12 @@ let focusId=null, wakeLock=null;
 async function keepAwake(){ try{ if(navigator.wakeLock&&focusId&&document.visibilityState==="visible") wakeLock=await navigator.wakeLock.request("screen"); }catch(e){ wakeLock=null; } }
 document.addEventListener("visibilitychange",()=>{ if(focusId&&document.visibilityState==="visible") keepAwake(); });
 function openFocus(id){
-  focusId=id; renderFocus();
+  focusId=id; renderFocus(); renderNow();
   try{ const r=document.documentElement.requestFullscreen?.({navigationUI:"hide"}); r&&r.catch(()=>{}); }catch(e){}
   keepAwake();
 }
 function closeFocus(){
-  focusId=null; renderFocus();
+  focusId=null; renderFocus(); renderAsk(); renderNow();
   try{ if(document.fullscreenElement) document.exitFullscreen().catch(()=>{}); }catch(e){}
   try{ wakeLock&&wakeLock.release(); }catch(e){} wakeLock=null;
 }
@@ -785,6 +857,7 @@ function renderFocus(){
       <button class="f-x" data-act="fexit">Exit focus</button></div>
     <div class="f-mid">
       <h2 class="f-title">${esc(t.title)}</h2>
+      ${S.ask&&S.ask.id===t.id?askBox(t,true):""}
       ${onBreak?`<div class="f-mode brk">Break · ${B()/60000} min</div>
       <div class="f-clock brk"><span data-bk>${fmtClock(Math.max(0,S.brk.end-Date.now()))}</span></div>
       <div class="f-sub">Stand up, stretch, drink water. Work time so far: ${fmtClock(ms)}</div>
@@ -1063,6 +1136,7 @@ document.addEventListener("click",e=>{
     case "done": if(t.done){ t.done=false; t.doneAt=null; } else completeTask(t); commit(); break;
     case "urgent": t.urgent=!t.urgent; commit(); break;
     case "timer": {
+      if(S.ask&&S.ask.id===t.id) S.ask=null;
       if(t.runStart) stopTimer(t);
       else { S.brk=null; S.tasks.forEach(x=>{ if(x!==t) stopTimer(x); }); t.runStart=Date.now(); blockSeen[t.id]=Math.floor(elapsed(t)/W()); chime.prime||(chime.prime=1, (()=>{ try{ audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)(); audioCtx.resume(); }catch(e){} })()); }
       commit(); if(t.runStart) openFocus(t.id); break; }
