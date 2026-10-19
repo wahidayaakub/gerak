@@ -457,17 +457,65 @@ const syncEl = document.getElementById("sync");
 function setSync(cls,text){ syncEl.className="sync "+cls; syncEl.querySelector("span").textContent=text; }
 function commit(){ saveLocal(); render(); if(!ref){ setSync("","Saved on this device"); return; }
   dirty=true; setSync("busy","Saving…"); clearTimeout(timer); timer=setTimeout(flush,700); }
+/* 3-way merge: keep only what THIS device changed since it last synced,
+   on top of whatever the other devices saved meanwhile. */
+let base=null;
+const J=v=>JSON.stringify(v===undefined?null:v);
+function mergeObj(b,l,r){
+  b=b||{}; l=l||{}; r=r||{}; const out={};
+  const keys=new Set([...Object.keys(b),...Object.keys(l),...Object.keys(r)]);
+  for(const k of keys){
+    const v=J(l[k])!==J(b[k])?l[k]:r[k];
+    if(v!==undefined&&v!==null) out[k]=v;
+  }
+  return out;
+}
+function mergeList(b,l,r){
+  b=b||[]; l=l||[]; r=r||[];
+  const B=new Map(b.map(x=>[x.id,x])), L=new Map(l.map(x=>[x.id,x])), R=new Map(r.map(x=>[x.id,x]));
+  const delLocal=id=>B.has(id)&&!L.has(id), delRemote=id=>B.has(id)&&!R.has(id);
+  const changedLocal=id=>L.has(id)&&(!B.has(id)||J(L.get(id))!==J(B.get(id)));
+  const keep=id=>!delLocal(id)&&!(delRemote(id)&&!changedLocal(id));
+  const localReordered=J(l.map(x=>x.id))!==J(b.map(x=>x.id));
+  const first=localReordered?l:r, second=localReordered?r:l;
+  const ids=[]; const seen=new Set();
+  for(const x of [...first,...second]){ if(seen.has(x.id)) continue; seen.add(x.id); if(keep(x.id)) ids.push(x.id); }
+  return ids.map(id=> L.has(id)&&R.has(id)?mergeObj(B.get(id),L.get(id),R.get(id)) : (L.get(id)||R.get(id)));
+}
+function mergeState(b,l,r){
+  b=b||{};
+  const rest=k=>{ const o={...k}; delete o.tabs; delete o.sections; delete o.tasks; delete o.settings; return o; };
+  const out=mergeObj(rest(b),rest(l),rest(r));
+  out.tabs=mergeList(b.tabs,l.tabs,r.tabs);
+  out.sections=mergeList(b.sections,l.sections,r.sections);
+  out.tasks=mergeList(b.tasks,l.tasks,r.tasks);
+  out.settings=mergeObj(b.settings,l.settings,r.settings);
+  out.activeTab=l.activeTab;
+  return out;
+}
+function takeMerged(body,sentLocal){
+  // body = what is now saved; sentLocal = our state when we started saving
+  const saved=JSON.parse(body), keepTab=S.activeTab;
+  const next=dirty?mergeState(sentLocal,S,saved):saved;
+  next.activeTab=keepTab; base=saved; lastRemote=body;
+  const changed=J(next)!==J(S); S=next; normalize(); saveLocal(); if(changed) render();
+}
 async function flush(){
   if(!ref||writing||!dirty||!ready) return;
   writing=true; dirty=false;
-  const body=JSON.stringify(S);
-  try{ await ref.set({state:body}); lastRemote=body; setSync("on","Synced"); }
-  catch(e){ setSync("","Saved on this device. Sync paused"); }
+  const sentLocal=JSON.parse(JSON.stringify(S));
+  try{
+    const body=await ref.mergeWrite(remoteBody=>{
+      let remote=null; try{ remote=typeof remoteBody==="string"?JSON.parse(remoteBody):null; }catch(e){}
+      return JSON.stringify(remote&&base?mergeState(base,sentLocal,remote):sentLocal);
+    });
+    takeMerged(body,sentLocal); setSync("on","Synced");
+  }catch(e){ dirty=true; setSync("","Saved on this device. Sync paused"); }
   writing=false; if(dirty) flush();
 }
 let ready=false, unsub=null, me=null;
 function adopt(body){
-  try{ const keepTab=S.activeTab; S=JSON.parse(body); normalize();
+  try{ const keepTab=S.activeTab; S=JSON.parse(body); base=JSON.parse(body); normalize();
     if(!S.tabs.some(t=>t.id===keepTab)&&keepTab!=="today"&&keepTab!=="done"&&keepTab!=="upcoming") S.activeTab="today"; else S.activeTab=keepTab;
     saveLocal(); render(); setSync("on","Synced"); }catch(e){}
 }
@@ -497,7 +545,9 @@ async function connectClaude(){
     const [db,user]=await Promise.all([claude.use("db"),claude.use("user")]);
     if(!db||!user){ ready=true; setSync("","Saved on this device"); return; }
     const id=await user.id(); if(!id){ ready=true; setSync("","Saved on this device"); return; }
-    ref=db.doc("data/users/"+id+"/board");
+    const d=db.doc("data/users/"+id+"/board");
+    ref={ onSnapshot:(n,e)=>d.onSnapshot(n,e),
+      async mergeWrite(fn){ let cur=null; try{ const sn=await d.get(); cur=sn.exists?sn.data()?.state:null; }catch(e){} const out=fn(cur); await d.set({state:out}); return out; } };
     listen();
   }catch(e){ ready=true; setSync("","Saved on this device"); }
 }
@@ -519,6 +569,11 @@ function connectFirebase(){
 function rtdbDoc(r){
   return {
     set:(data)=>r.set(data),
+    async mergeWrite(fn){
+      const res=await r.transaction(cur=>({state:fn(cur&&cur.state)}));
+      if(!res.committed) throw new Error("not saved");
+      return res.snapshot.val().state;
+    },
     onSnapshot(next,err){
       const h=snap=>next({exists:snap.exists(),data:()=>snap.val(),metadata:{fromCache:false,hasPendingWrites:false}});
       r.on("value",h,e=>err&&err(e));
