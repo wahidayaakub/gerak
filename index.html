@@ -161,6 +161,8 @@ ul.list{list-style:none;margin:0;padding:0;min-height:6px}
 .crumb2{display:inline-flex;align-items:center;gap:6px}
 .crumb2 .dot{width:8px;height:8px;border-radius:50%}
 .ontime{color:var(--ok)}
+.done-when{background:none;border:none;padding:0;color:inherit;font:inherit;text-decoration:underline dotted;text-underline-offset:3px;cursor:pointer}
+.done-when:hover{color:var(--fg)}
 .taken{color:var(--fg);font-weight:700}
 .icon-btn.armed{color:var(--bg);background:var(--danger);font-size:.8rem}
 .t-cell{display:none;min-width:0}
@@ -560,6 +562,7 @@ let fbAuth=null;
 function connectFirebase(){
   firebase.initializeApp(FBC);
   fbAuth=firebase.auth(); const rtdb=firebase.database();
+  try{ fbAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{}); }catch(e){}
   let hiddenAt=0; document.addEventListener("visibilitychange",()=>{ if(document.hidden){ hiddenAt=Date.now(); return; }
     if(Date.now()-hiddenAt>20000){ try{ rtdb.goOffline(); rtdb.goOnline(); setSync("busy","Refreshing…"); }catch(e){} } });
   try{ rtdb.ref(".info/connected").on("value",sn=>{ if(sn.val()===true&&!dirty&&!writing&&ref) setSync("on","Synced"); }); }catch(e){}
@@ -567,8 +570,9 @@ function connectFirebase(){
   fbAuth.getRedirectResult().catch(e=>gateError(e));
   fbAuth.onAuthStateChanged(u=>{
     if(unsub){ try{unsub();}catch(e){} unsub=null; } ref=null; ready=false; dirty=false; clearTimeout(timer); timer=null;
-    if(!u){ me=null; showGate(true); return; }
+    if(!u){ me=null; lsSet("gerak-lastUid",null); showGate(true); return; }
     me={name:u.displayName||u.email||"",email:u.email||""};
+    lsSet("gerak-lastUid",u.uid); lsSet("gerak-lastName",me.name);
     LS="gerak-"+u.uid; S=loadLocal()||starter(true); normalize(); lastRemote="";
     showGate(false); render();
     ref=rtdbDoc(rtdb.ref("users/"+u.uid+"/board"));
@@ -650,6 +654,8 @@ function importOld(){
   S.tabs.push(...r.tabs); S.sections.push(...r.sections); S.tasks.push(...r.tasks);
   S.settings.oldImported=true; commit(); toast(`Brought in ${r.tasks.length} tasks from the old Gérak.`);
 }
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ v==null?localStorage.removeItem(k):localStorage.setItem(k,v); }catch(e){} }
 function showGate(on){ document.getElementById("gate").hidden=!on; document.querySelector(".wrap").hidden=on; if(on) document.getElementById("gateErr").textContent=""; }
 function gateError(e){ const c=e&&e.code; if(!c) return;
   const m=c==="auth/unauthorized-domain"?"This web address is not approved in Firebase yet. Add it under Authentication, Settings, Authorised domains."
@@ -1115,7 +1121,7 @@ function renderDone(){
     h+=`<li class="done-row" data-id="${t.id}">
       <button class="check on" data-act="restore" aria-label="Mark not done and send back to ${esc(tab.name)}" title="Not done? Send it back"></button>
       <div class="title"><div class="dt">${esc(t.title)}</div>
-        <div class="meta2"><span class="crumb2"><span class="dot" style="background:${tab.color}"></span>${esc(tab.name)} · ${esc(s.name)}</span><span>Done ${time}</span>${elapsed(t)>=1000?`<span class="taken" title="Time taken">⏱ ${fmtTaken(elapsed(t))}</span>`:""}${t.due?`<span class="${late?"late":"ontime"}">${late?"After deadline":"Before deadline"}</span>`:""}</div></div>
+        <div class="meta2"><span class="crumb2"><span class="dot" style="background:${tab.color}"></span>${esc(tab.name)} · ${esc(s.name)}</span><button class="done-when" data-act="doneDate" title="Change when this was done">Done ${time} ✎</button>${elapsed(t)>=1000?`<span class="taken" title="Time taken">⏱ ${fmtTaken(elapsed(t))}</span>`:""}${t.due?`<span class="${late?"late":"ontime"}">${late?"After deadline":"Before deadline"}</span>`:""}</div></div>
       <button class="icon-btn" data-act="delDone" aria-label="Delete task" title="Delete">✕</button></li>`;
   }
   if(cur) h+=`</ul>`;
@@ -1270,7 +1276,7 @@ document.addEventListener("click",e=>{
     case "import": openImport(); break;
     case "oldImport": importOld(); break;
     case "oldLater": oldDismiss=true; renderOldBanner(); break;
-    case "signout": if(b.classList.contains("armed")){ fbAuth&&fbAuth.signOut(); } else { b.classList.add("armed"); b.textContent="Tap again to sign out"; setTimeout(()=>{ if(b.isConnected) render(); },3000); } break;
+    case "signout": if(b.classList.contains("armed")){ lsSet("gerak-lastUid",null); fbAuth&&fbAuth.signOut(); } else { b.classList.add("armed"); b.textContent="Tap again to sign out"; setTimeout(()=>{ if(b.isConnected) render(); },3000); } break;
     case "theme": S.settings.theme=curTheme()==="dark"?"light":"dark"; commit(); break;
     case "fexit": closeFocus(); break;
     case "fdone": completeTask(t); closeFocus(); commitNow(); break;
@@ -1283,6 +1289,7 @@ document.addEventListener("click",e=>{
     case "resetUF": Object.assign(UF,{range:"all",from:"",to:"",tab:"all",sec:"all"}); render(); break;
     case "ufBy": UF.by=b.dataset.by; render(); break;
     case "resetDF": Object.assign(DF,{range:"all",from:"",to:"",tab:"all",sec:"all"}); render(); break;
+    case "doneDate": { const dt=taskOf(b.closest("li.done-row").dataset.id); if(dt) openDoneDate(dt); break; }
     case "restore": case "delDone": {
       const dt=taskOf(b.closest("li.done-row").dataset.id); if(!dt) break;
       if(act==="restore"){ dt.done=false; dt.doneAt=null; }
@@ -1388,6 +1395,21 @@ function openTab(tab){
   armDelete(document.getElementById("f-del"),()=>{ const sids=S.sections.filter(s=>s.tabId===tab.id).map(s=>s.id);
     S.tasks=S.tasks.filter(x=>!sids.includes(x.sectionId)); S.sections=S.sections.filter(s=>s.tabId!==tab.id); S.tabs=S.tabs.filter(x=>x!==tab); S.activeTab="today"; commit(); });
   document.getElementById("f-save").onclick=ev=>{ ev.preventDefault(); const name=document.getElementById("f-tname").value.trim(); if(name) tab.name=name; tab.color=color; dlg.close(); commit(); };
+  dlg.showModal();
+}
+function openDoneDate(t){
+  const d=new Date(t.doneAt||Date.now());
+  const y=new Date(d); y.setDate(y.getDate()-1);
+  sheet.innerHTML=`<h3>When was this done?</h3>
+    <div class="rm-sub" style="color:var(--muted)">${esc(t.title)}</div>
+    <div class="field"><label for="f-doneat">Done on</label><input id="f-doneat" type="datetime-local" value="${localISO(d)}" max="${localISO(new Date())}"></div>
+    <div class="presets"><span class="hint">Quick pick</span><button type="button" class="ghost" data-dd="1">Yesterday</button><button type="button" class="ghost" data-dd="2">2 days ago</button><button type="button" class="ghost" data-dd="0">Today</button></div>
+    <div class="actions"><span></span><button class="primary" id="f-dsave">Save</button></div>`;
+  sheet.querySelectorAll("[data-dd]").forEach(b=>b.onclick=()=>{ const x=new Date(d); const n=new Date(); x.setFullYear(n.getFullYear(),n.getMonth(),n.getDate()-(+b.dataset.dd)); document.getElementById("f-doneat").value=localISO(x); });
+  document.getElementById("f-dsave").onclick=ev=>{ ev.preventDefault();
+    const v=document.getElementById("f-doneat").value; const t2=taskOf(t.id);
+    if(v&&t2){ const nd=new Date(v); if(!isNaN(nd)){ t2.doneAt=nd.toISOString(); } }
+    dlg.close(); commitNow(); if(t2) toast(`Moved to ${fmt(localISO(new Date(t2.doneAt)))}.`); };
   dlg.showModal();
 }
 function openSettings(){
@@ -1559,7 +1581,16 @@ dlg.addEventListener("click",e=>{ if(e.target===dlg) dlg.close(); });
 S=FB_ON?starterPublic():(loadLocal()||starter());
 normalize();
 if(autoToday()) saveLocal();
-if(FB_ON){ showGate(true); document.getElementById("gateBtn").onclick=signIn; } else render();
+if(FB_ON){
+  document.getElementById("gateBtn").onclick=signIn;
+  const lastUid=lsGet("gerak-lastUid");
+  if(lastUid){
+    // signed in last time: open straight to the board from this device's copy while Google confirms in the background
+    me={name:lsGet("gerak-lastName")||"",email:""};
+    LS="gerak-"+lastUid; S=loadLocal()||starterPublic(); normalize();
+    showGate(false); render(); setSync("busy","Connecting…");
+  } else showGate(true);
+} else render();
 connect();
 setInterval(()=>{ if(autoToday()) commit(); else if(!dlg.open&&!document.activeElement?.matches("input")) render(); },60000);
 })();
