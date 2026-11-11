@@ -330,6 +330,44 @@ body.has-nowbar .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
 .t-crumb .dot{width:7px;height:7px;border-radius:50%}
 .t-crumb .rank{font-variant-numeric:tabular-nums;font-weight:700;color:var(--sun);min-width:1.2em}
 .today-list .list{min-height:10px}
+.tl-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.tl-seg{max-width:320px;flex:1 1 240px}
+.tl-nav{display:flex;gap:6px}
+.tl-nav .ghost{padding:7px 12px}
+.tl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--bg);--lab:200px}
+@media (max-width:600px){.tl-wrap{--lab:120px}}
+.tl{width:calc(var(--lab) + var(--w));min-width:100%}
+.tl-row{display:flex;min-height:34px;border-bottom:1px solid var(--line)}
+.tl-row:last-child{border-bottom:none}
+.tl-lab{position:sticky;left:0;z-index:3;flex:none;width:var(--lab);box-sizing:border-box;padding:6px 10px;background:var(--surface);border-right:1px solid var(--line);font-size:.85rem;display:flex;align-items:center;gap:6px;min-width:0}
+.tl-lab .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.tl-name{background:none;border:none;padding:0;text-align:left;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%}
+.tl-track{position:relative;flex:none;width:var(--w)}
+.tl-head .tl-lab,.tl-load .tl-lab{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--faint)}
+.tl-day{position:absolute;top:0;bottom:0;display:grid;place-items:center;font-size:.74rem;color:var(--muted);border-left:1px solid var(--line);font-variant-numeric:tabular-nums}
+.tl-day.today{color:var(--sun);font-weight:700}
+.tl-n{position:absolute;top:5px;bottom:5px;display:grid;place-items:center;font-size:.78rem;font-weight:700;border-radius:6px;font-variant-numeric:tabular-nums;color:var(--muted);box-sizing:border-box;margin:0 2px}
+.tl-n.lo{background:var(--sun-soft);color:var(--fg)}
+.tl-n.mid{background:rgba(233,178,90,.45);color:var(--fg)}
+.tl-n.hi{background:var(--danger);color:var(--bg)}
+.tl-group{min-height:28px;background:var(--surface-2)}
+.tl-group .tl-lab{background:var(--surface-2);font-weight:700;font-size:.8rem}
+.tl-col{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);opacity:.6}
+.tl-col.we{background:var(--surface-2);opacity:.5}
+.tl-now{position:absolute;top:0;bottom:0;width:2px;background:var(--sun);z-index:1}
+.tl-b{position:absolute;top:6px;height:22px;z-index:2;border:none;border-radius:6px;background:var(--c);color:#14161d;font-size:.74rem;font-weight:700;padding:0 6px;text-align:left;overflow:hidden;white-space:nowrap;box-shadow:0 1px 0 rgba(0,0,0,.2)}
+.tl-b span{display:block;overflow:hidden;text-overflow:ellipsis}
+.tl-b.cl{border-top-left-radius:0;border-bottom-left-radius:0}
+.tl-b.cr{border-top-right-radius:0;border-bottom-right-radius:0}
+.tl-b.late{outline:2px solid var(--danger);outline-offset:1px}
+.tl-b.urg{box-shadow:inset 3px 0 0 var(--danger)}
+.tl-pt{position:absolute;top:10px;width:14px;height:14px;margin-left:-7px;transform:rotate(45deg);border:2px solid var(--bg);border-radius:2px;z-index:2;padding:0}
+.tl-pt.late{outline:2px solid var(--danger)}
+.tl-key{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:10px;font-size:.8rem;color:var(--muted);align-items:center}
+.tl-key span{display:inline-flex;align-items:center;gap:6px}
+.tl-key .tl-n{position:static;width:22px;height:20px;margin:0}
+.tl-key-pt{width:10px;height:10px;transform:rotate(45deg);background:var(--muted);display:inline-block}
+.tl-key-now{width:2px;height:16px;background:var(--sun);display:inline-block}
 .sortable-ghost{opacity:.35}
 .sortable-chosen{background:var(--surface-2)}
 
@@ -524,7 +562,7 @@ async function flush(){
 let ready=false, unsub=null, me=null;
 function adopt(body){
   try{ const keepTab=S.activeTab; S=JSON.parse(body); base=JSON.parse(body); normalize();
-    if(!S.tabs.some(t=>t.id===keepTab)&&keepTab!=="today"&&keepTab!=="done"&&keepTab!=="upcoming") S.activeTab="today"; else S.activeTab=keepTab;
+    if(!S.tabs.some(t=>t.id===keepTab)&&keepTab!=="today"&&keepTab!=="done"&&keepTab!=="upcoming"&&keepTab!=="timeline") S.activeTab="today"; else S.activeTab=keepTab;
     saveLocal(); render(); setSync("on","Synced"); }catch(e){}
 }
 function listen(){
@@ -719,6 +757,7 @@ function render(){
   let h=`<button class="tab ${S.activeTab==="today"?"active":""}" data-act="tab" data-id="today" data-drop="today"><span class="dot" style="background:var(--sun)"></span>Today${todayCount?`<span class="badge">${todayCount}</span>`:""}</button>`;
   for(const t of S.tabs) h+=`<button class="tab ${S.activeTab===t.id?"active":""}" data-act="tab" data-id="${t.id}" data-drop="tab"><span class="dot" style="background:${t.color}"></span>${esc(t.name)}</button>`;
   h+=`<button class="tab ${S.activeTab==="upcoming"?"active":""}" data-act="tab" data-id="upcoming"><span class="cal" aria-hidden="true">◷</span>Upcoming</button>`;
+  h+=`<button class="tab ${S.activeTab==="timeline"?"active":""}" data-act="tab" data-id="timeline"><span class="cal" aria-hidden="true">≡</span>Timeline</button>`;
   h+=`<button class="tab ${S.activeTab==="done"?"active":""}" data-act="tab" data-id="done" data-drop="done"><span class="tick" aria-hidden="true">✓</span>Done</button>`;
   h+= addingTab?`<span class="tab-new"><input id="newTab" placeholder="Tab name" maxlength="30" aria-label="New tab name"></span>`
               :`<button class="tab add" data-act="addTab" aria-label="Add tab" title="Add tab">+</button>`;
@@ -727,6 +766,7 @@ function render(){
   if(S.activeTab==="today") renderToday();
   else if(S.activeTab==="done") renderDone();
   else if(S.activeTab==="upcoming") renderUpcoming();
+  else if(S.activeTab==="timeline") renderTimeline();
   else renderArea(tabOf(S.activeTab)||(S.activeTab="today",null));
   bindSortables();
   renderFocus();
@@ -1129,6 +1169,72 @@ function renderDone(){
   panel.innerHTML=h;
 }
 const UF={by:"exec",range:"all",from:"",to:"",tab:"all",sec:"all"};
+/* ---------- Timeline (Gantt) ---------- */
+const TF={days:14,offset:0,tab:"all",sec:"all"};
+const DAY=864e5;
+function renderTimeline(){
+  const secsOfTab=TF.tab==="all"?[]:S.sections.filter(s=>s.tabId===TF.tab);
+  if(TF.sec!=="all"&&!secsOfTab.some(s=>s.id===TF.sec)) TF.sec="all";
+  const r0=new Date(); r0.setHours(0,0,0,0); r0.setDate(r0.getDate()+TF.offset);
+  const start=r0.getTime(), end=start+TF.days*DAY;
+  const colW=TF.days<=7?96:TF.days<=14?60:34;
+  const items=[];
+  for(const t of S.tasks){
+    if(t.done||(!t.exec&&!t.due)) continue;
+    const s=secOf(t.sectionId); if(!s) continue;
+    if(TF.tab!=="all"&&s.tabId!==TF.tab) continue; if(TF.sec!=="all"&&s.id!==TF.sec) continue;
+    let a=new Date(t.exec||t.due).getTime(), z=new Date(t.due||t.exec).getTime();
+    if(isNaN(a)||isNaN(z)) continue; if(z<a){ const x=a; a=z; z=x; }
+    const point=!(t.exec&&t.due);
+    if(z<start||a>=end) continue;
+    items.push({t,s,tab:tabOf(s.tabId),a,z,point});
+  }
+  // group by tab then section, each group sorted by start
+  const order=(x)=>S.tabs.findIndex(tb=>tb.id===x.s.tabId)*1e4+S.sections.indexOf(x.s);
+  items.sort((p,q)=>order(p)-order(q)||p.a-q.a);
+  // load per day: tasks whose span touches that day
+  const days=[...Array(TF.days)].map((_,i)=>{ const d0=start+i*DAY, d1=d0+DAY; const n=items.filter(x=>x.a<d1&&(x.point?x.a>=d0:x.z>=d0)).length; return {d0,n,date:new Date(d0)}; });
+  const peak=days.reduce((m,d)=>d.n>m.n?d:m,{n:0});
+  const lvl=n=>n>=4?"hi":n>=3?"mid":n>=2?"lo":n>=1?"one":"";
+  const label=d=>d.toLocaleDateString("en-GB",{weekday:"short",day:"numeric"});
+  const rangeTxt=`${days[0].date.toLocaleDateString("en-GB",{day:"numeric",month:"short"})} – ${days[days.length-1].date.toLocaleDateString("en-GB",{day:"numeric",month:"short"})}`;
+  let h=`<div class="panel-head"><div><h2>Timeline</h2><div class="sub">${items.length} planned task${items.length===1?"":"s"} · ${rangeTxt}${peak.n>=2?` · busiest: ${label(peak.date)} (${peak.n} overlap)`:""}</div></div></div>
+  <div class="tl-bar">
+    <div class="seg tl-seg" role="tablist" aria-label="Range">${[7,14,30].map(n=>`<button type="button" role="tab" aria-selected="${TF.days===n}" data-act="tlDays" data-d="${n}">${n} days</button>`).join("")}</div>
+    <div class="tl-nav"><button class="ghost" data-act="tlShift" data-d="-${TF.days}" aria-label="Earlier">←</button><button class="ghost" data-act="tlToday">Today</button><button class="ghost" data-act="tlShift" data-d="${TF.days}" aria-label="Later">→</button></div>
+  </div>
+  <div class="filters">
+    <div class="field"><label for="tf-tab">Header</label><select id="tf-tab" data-tf="tab"><option value="all">All tabs</option>
+      ${S.tabs.map(t=>`<option value="${t.id}" ${TF.tab===t.id?"selected":""}>${esc(t.name)}</option>`).join("")}</select></div>
+    <div class="field"><label for="tf-sec">Sub-header</label><select id="tf-sec" data-tf="sec" ${TF.tab==="all"?"disabled":""}><option value="all">All sections</option>
+      ${secsOfTab.map(s=>`<option value="${s.id}" ${TF.sec===s.id?"selected":""}>${esc(s.name)}</option>`).join("")}</select></div>
+  </div>`;
+  if(!items.length){
+    h+=`<div class="empty-state"><div class="sunmark"></div><strong>Nothing planned in these dates</strong>Give a task an execution date and a deadline, and it shows here as a bar.</div>`;
+    panel.innerHTML=h; return;
+  }
+  const W2=TF.days*colW, now=nowMs(), xOf=v=>Math.max(0,Math.min(W2,(v-start)/DAY*colW));
+  const grid=days.map((d,i)=>{ const wd=d.date.getDay(); return `<div class="tl-col ${wd===0||wd===6?"we":""}" style="left:${i*colW}px;width:${colW}px"></div>`; }).join("");
+  const nowLine=now>=start&&now<end?`<div class="tl-now" style="left:${xOf(now)}px"></div>`:"";
+  h+=`<div class="tl-wrap" style="--colw:${colW}px"><div class="tl" style="--w:${W2}px">
+    <div class="tl-row tl-head"><div class="tl-lab">Date</div><div class="tl-track">${days.map((d,i)=>`<div class="tl-day ${d.d0===new Date().setHours(0,0,0,0)?"today":""}" style="left:${i*colW}px;width:${colW}px">${colW<40?d.date.getDate():label(d.date)}</div>`).join("")}</div></div>
+    <div class="tl-row tl-load"><div class="tl-lab">Tasks that day</div><div class="tl-track">${days.map((d,i)=>`<div class="tl-n ${lvl(d.n)}" style="left:${i*colW}px;width:${colW}px" title="${label(d.date)}: ${d.n} task${d.n===1?"":"s"}">${d.n||""}</div>`).join("")}</div></div>`;
+  let cur="";
+  for(const x of items){
+    const g=x.tab.id+"|"+x.s.id;
+    if(g!==cur){ cur=g; h+=`<div class="tl-row tl-group"><div class="tl-lab"><span class="dot" style="background:${x.tab.color}"></span>${esc(x.tab.name)} · ${esc(x.s.name)}</div><div class="tl-track">${grid}</div></div>`; }
+    const left=xOf(x.a), right=x.point?left:xOf(x.z), cutL=x.a<start, cutR=!x.point&&x.z>end;
+    const late=x.t.due&&new Date(x.t.due).getTime()<now;
+    const span=x.point?"":`${fmt(x.t.exec)} → ${fmt(x.t.due)}`;
+    const bar=x.point
+      ?`<button class="tl-pt ${late?"late":""}" style="left:${left}px;background:${x.tab.color}" data-act="tlOpen" data-id="${x.t.id}" title="${esc(x.t.title)}: ${x.t.due?"due "+fmt(x.t.due):"start "+fmt(x.t.exec)}" aria-label="${esc(x.t.title)}"></button>`
+      :`<button class="tl-b ${cutL?"cl":""} ${cutR?"cr":""} ${late?"late":""} ${x.t.urgent?"urg":""}" style="left:${left}px;width:${Math.max(8,right-left)}px;--c:${x.tab.color}" data-act="tlOpen" data-id="${x.t.id}" title="${esc(x.t.title)}: ${span}" aria-label="${esc(x.t.title)}">${right-left>=44?`<span>${esc(x.t.title)}</span>`:""}</button>`;
+    h+=`<div class="tl-row"><div class="tl-lab"><button class="tl-name" data-act="tlOpen" data-id="${x.t.id}">${x.t.urgent?'<span class="urg-pill">Urgent</span>':""}${esc(x.t.title)}</button></div><div class="tl-track">${grid}${nowLine}${bar}</div></div>`;
+  }
+  h+=`</div></div>
+  <div class="tl-key"><span><i class="tl-n lo">2</i> 2 tasks overlap</span><span><i class="tl-n mid">3</i> 3 overlap</span><span><i class="tl-n hi">4</i> 4 or more</span><span><i class="tl-key-pt"></i> deadline or start only</span><span><i class="tl-key-now"></i> now</span></div>`;
+  panel.innerHTML=h;
+}
 function renderUpcoming(){
   const secsOfTab=UF.tab==="all"?[]:S.sections.filter(s=>s.tabId===UF.tab);
   if(UF.sec!=="all"&&!secsOfTab.some(s=>s.id===UF.sec)) UF.sec="all";
@@ -1178,6 +1284,7 @@ function renderUpcoming(){
   panel.innerHTML=h;
 }
 document.addEventListener("change",e=>{
+  const tk=e.target.dataset?.tf; if(tk){ TF[tk]=e.target.value; if(tk==="tab") TF.sec="all"; render(); document.getElementById(e.target.id)?.focus(); return; }
   const uk=e.target.dataset?.uf; if(uk){ UF[uk]=e.target.value; if(uk==="tab") UF.sec="all";
     if(uk==="range"&&UF.range==="custom"&&!UF.from){ UF.from=dayKey(new Date()); const d=new Date(); d.setDate(d.getDate()+13); UF.to=dayKey(d); }
     render(); document.getElementById(e.target.id)?.focus(); return; }
@@ -1289,6 +1396,10 @@ document.addEventListener("click",e=>{
     case "seeDone": DF.range="all"; DF.tab=b.dataset.tab; DF.sec=b.dataset.sec; S.activeTab="done"; saveLocal(); render(); break;
     case "resetUF": Object.assign(UF,{range:"all",from:"",to:"",tab:"all",sec:"all"}); render(); break;
     case "ufBy": UF.by=b.dataset.by; render(); break;
+    case "tlDays": TF.days=+b.dataset.d; render(); break;
+    case "tlShift": TF.offset+=(+b.dataset.d); render(); break;
+    case "tlToday": TF.offset=0; render(); break;
+    case "tlOpen": { const tt=taskOf(b.dataset.id); if(tt) openTask(tt,"exec"); break; }
     case "resetDF": Object.assign(DF,{range:"all",from:"",to:"",tab:"all",sec:"all"}); render(); break;
     case "doneDate": { const dt=taskOf(b.closest("li.done-row").dataset.id); if(dt) openDoneDate(dt); break; }
     case "restore": case "delDone": {
