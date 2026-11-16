@@ -564,6 +564,7 @@ function adopt(body){
   try{ const keepTab=S.activeTab; S=JSON.parse(body); base=JSON.parse(body); normalize();
     if(!S.tabs.some(t=>t.id===keepTab)&&keepTab!=="today"&&keepTab!=="done"&&keepTab!=="upcoming"&&keepTab!=="timeline") S.activeTab="today"; else S.activeTab=keepTab;
     saveLocal(); render(); setSync("on","Synced"); }catch(e){}
+  try{ if(autoToday()) commit(); }catch(e){}
 }
 function listen(){
   let first=true; ready=false;
@@ -744,7 +745,12 @@ function execClass(t){ if(!t.exec||t.done) return ""; return new Date(t.exec)<=n
 
 function autoToday(){
   let changed=false; const now=nowMs();
-  for(const t of S.tasks){ if(t.exec&&!t.done&&!t.auto&&new Date(t.exec)<=now){ t.today=true; t.auto=true; changed=true; } }
+  // From the start of a task's execution day, pull it into Today once per execution date.
+  const d=new Date(now), today=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  for(const t of S.tasks){
+    if(!t.exec||t.done||t.autoFor===t.exec) continue;
+    if(t.exec.slice(0,10)<=today){ if(!t.today){ t.today=true; delete t.todayOrder; } t.autoFor=t.exec; changed=true; }
+  }
   return changed;
 }
 
@@ -1388,7 +1394,7 @@ document.addEventListener("click",e=>{
     case "theme": S.settings.theme=curTheme()==="dark"?"light":"dark"; commit(); break;
     case "fexit": closeFocus(); break;
     case "fdone": completeTask(t); closeFocus(); commitNow(); break;
-    case "today": t.today=!t.today; if(t.today) t.auto=true; delete t.todayOrder; commit(); break;
+    case "today": t.today=!t.today; if(t.exec) t.autoFor=t.exec; delete t.todayOrder; commit(); break;
     case "edit": openTask(t,b.dataset.focus); break;
     case "secMenu": openSection(secOf(b.dataset.id)); break;
     case "tabMenu": openTab(tabOf(b.dataset.id)); break;
